@@ -5,6 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { PaywallModal } from "./PaywallModal";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ExplicitWord {
   word: string;
@@ -46,10 +47,10 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
       try {
         const data = JSON.parse(analysisData);
         
-        // Map the analysis data to our format with buffer zones
-        // Start muting 0.15s before and end 0.25s after to ensure we catch everything
-        const MUTE_BUFFER_START = 0.15;
-        const MUTE_BUFFER_END = 0.25;
+        // Map the analysis data to our format with aggressive buffer zones
+        // Start muting 0.2s before and end 0.3s after to ensure we catch everything
+        const MUTE_BUFFER_START = 0.2;
+        const MUTE_BUFFER_END = 0.3;
         
         const words: ExplicitWord[] = data.explicitWords?.map((w: any) => ({
           word: w.word,
@@ -102,12 +103,12 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
         console.error('[ResultsView] Instrumental error:', e);
       });
       
-      // Sync time updates from instrumental (which plays continuously)
+  // Sync time updates from instrumental (which plays continuously)
       instrumentalAudio.addEventListener('timeupdate', () => {
         setCurrentTime(instrumentalAudio.currentTime);
         
-        // Tighter sync tolerance - sync if off by more than 0.05s
-        if (vocalsAudio && Math.abs(vocalsAudio.currentTime - instrumentalAudio.currentTime) > 0.05) {
+        // Very tight sync tolerance - sync if off by more than 0.02s (20ms)
+        if (vocalsAudio && Math.abs(vocalsAudio.currentTime - instrumentalAudio.currentTime) > 0.02) {
           vocalsAudio.currentTime = instrumentalAudio.currentTime;
         }
         
@@ -151,11 +152,15 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   useEffect(() => {
     if (vocalsRef.current && detectedWords.length > 0) {
       // Check if we're currently on an explicit word (with buffer)
+      // Use a small lookahead to start muting slightly before the word
+      const lookahead = 0.05;
+      const checkTime = currentTime + lookahead;
+      
       const currentWord = detectedWords.find(word => {
-        return currentTime >= word.timestamp && currentTime <= word.end;
+        return checkTime >= word.timestamp && checkTime <= word.end;
       });
       
-      // Smoothly mute/unmute vocals
+      // Instantly mute/unmute vocals with no transition
       const targetVolume = currentWord ? 0 : 1;
       
       if (vocalsRef.current.volume !== targetVolume) {
@@ -219,26 +224,59 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
 
   const handleDownload = async () => {
     if (isAdmin) {
-      // Admin users can download directly
-      const vocalsUrl = sessionStorage.getItem('vocalsUrl');
-      const instrumentalUrl = sessionStorage.getItem('instrumentalUrl');
-      
-      if (vocalsUrl) {
-        const link = document.createElement('a');
-        link.href = vocalsUrl;
-        link.download = `${fileName}_clean_vocals.mp3`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
-      
-      if (instrumentalUrl) {
-        const link = document.createElement('a');
-        link.href = instrumentalUrl;
-        link.download = `${fileName}_instrumental.mp3`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+      // Admin users can download the fully mixed clean version
+      try {
+        const vocalsUrl = sessionStorage.getItem('vocalsUrl');
+        const instrumentalUrl = sessionStorage.getItem('instrumentalUrl');
+        const analysisData = sessionStorage.getItem('audioAnalysis');
+        
+        if (!vocalsUrl || !instrumentalUrl || !analysisData) {
+          console.error('Missing required data for download');
+          return;
+        }
+        
+        const analysis = JSON.parse(analysisData);
+        const explicitWords = analysis.explicitWords?.map((w: any) => ({
+          timestamp: Math.max(0, (w.start || 0) - 0.15),
+          end: (w.end || (w.start + 0.5) || 0) + 0.25,
+        })) || [];
+        
+        console.log('[Download] Starting clean audio generation...');
+        
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          console.error('No session found');
+          return;
+        }
+        
+        const { data, error } = await supabase.functions.invoke('mix-clean-audio', {
+          body: {
+            vocalsUrl,
+            instrumentalUrl,
+            explicitWords,
+            fileName,
+          },
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+        
+        if (error) {
+          console.error('[Download] Error:', error);
+          return;
+        }
+        
+        if (data?.cleanAudioUrl) {
+          console.log('[Download] Clean audio ready:', data.cleanAudioUrl);
+          const link = document.createElement('a');
+          link.href = data.cleanAudioUrl;
+          link.download = `${fileName}_clean.mp3`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      } catch (error) {
+        console.error('[Download] Error:', error);
       }
     } else {
       setShowPaywall(true);
