@@ -6,7 +6,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const HETZNER_SERVER = 'http://178.156.190.229:9000/clean';
+
 interface ExplicitWord {
+  word: string;
   timestamp: number;
   end: number;
 }
@@ -17,7 +20,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log('[mix-clean-audio] Starting audio mixing process');
+    console.log('[mix-clean-audio] Starting Hetzner server processing');
     
     const { vocalsUrl, instrumentalUrl, explicitWords, fileName } = await req.json();
     
@@ -42,7 +45,7 @@ serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    console.log('[mix-clean-audio] Downloading audio files...');
+    console.log('[mix-clean-audio] Downloading audio files for Hetzner...');
     
     // Download both audio files
     const [vocalsResponse, instrumentalResponse] = await Promise.all([
@@ -57,96 +60,69 @@ serve(async (req) => {
     const vocalsBlob = await vocalsResponse.blob();
     const instrumentalBlob = await instrumentalResponse.blob();
     
-    console.log('[mix-clean-audio] Building FFmpeg filter for muting...');
+    console.log('[mix-clean-audio] Preparing request to Hetzner server...');
     
-    // Build FFmpeg filter to mute vocals during explicit words
-    // Format: "volume=enable='between(t,start,end)':volume=0"
-    let volumeFilters = '';
+    // Prepare multipart form data for Hetzner server
+    const formData = new FormData();
     
-    if (explicitWords.length > 0) {
-      const muteConditions = explicitWords
-        .map((word: ExplicitWord) => `between(t,${word.timestamp},${word.end})`)
-        .join('+');
-      
-      volumeFilters = `volume=enable='${muteConditions}':volume=0`;
-    }
-
-    console.log('[mix-clean-audio] Calling Replicate for audio mixing...');
+    // Add vocals file
+    formData.append('vocals', vocalsBlob, 'vocals.mp3');
     
-    // Use Replicate to mix audio with FFmpeg
-    const replicateResponse = await fetch('https://api.replicate.com/v1/predictions', {
+    // Add instrumental file
+    formData.append('instrumental', instrumentalBlob, 'instrumental.mp3');
+    
+    // Add mute timestamps as JSON
+    const muteTimestamps = explicitWords.map((w: ExplicitWord) => ({
+      start: w.timestamp,
+      end: w.end,
+      word: w.word,
+    }));
+    formData.append('mute_timestamps', JSON.stringify(muteTimestamps));
+    
+    // Enable full render/mix
+    formData.append('render', 'true');
+    
+    console.log('[mix-clean-audio] Sending to Hetzner server:', HETZNER_SERVER);
+    console.log('[mix-clean-audio] Muting', explicitWords.length, 'explicit words');
+    
+    // Send to Hetzner server
+    const hetznerResponse = await fetch(HETZNER_SERVER, {
       method: 'POST',
-      headers: {
-        'Authorization': `Token ${Deno.env.get('REPLICATE_API_KEY')}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        version: 'b307c29fcbef80bc9edda8c283c1e3c9c1e8ef46b9dc8d4d82ef2f3d40d73c3e', // FFmpeg model
-        input: {
-          vocals: vocalsUrl,
-          instrumental: instrumentalUrl,
-          filter_complex: volumeFilters || 'anullsrc',
-        },
-      }),
+      body: formData,
     });
 
-    if (!replicateResponse.ok) {
-      throw new Error('Failed to start audio mixing');
+    if (!hetznerResponse.ok) {
+      const errorText = await hetznerResponse.text();
+      console.error('[mix-clean-audio] Hetzner error:', errorText);
+      throw new Error(`Hetzner server error: ${hetznerResponse.status}`);
     }
 
-    const prediction = await replicateResponse.json();
-    let predictionId = prediction.id;
-    
-    console.log('[mix-clean-audio] Polling for result...');
-    
-    // Poll for result (max 5 minutes)
-    let attempts = 0;
-    let mixedAudioUrl = null;
-    
-    while (attempts < 60 && !mixedAudioUrl) {
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5s between checks
-      
-      const statusResponse = await fetch(
-        `https://api.replicate.com/v1/predictions/${predictionId}`,
-        {
-          headers: {
-            'Authorization': `Token ${Deno.env.get('REPLICATE_API_KEY')}`,
-          },
-        }
-      );
-      
-      const status = await statusResponse.json();
-      console.log(`[mix-clean-audio] Status: ${status.status}`);
-      
-      if (status.status === 'succeeded') {
-        mixedAudioUrl = status.output;
-        break;
-      } else if (status.status === 'failed') {
-        throw new Error('Audio mixing failed');
-      }
-      
-      attempts++;
+    const hetznerResult = await hetznerResponse.json();
+    console.log('[mix-clean-audio] Hetzner response:', hetznerResult);
+
+    if (hetznerResult.status !== 'success' || !hetznerResult.download_url) {
+      throw new Error('Hetzner server did not return a valid download URL');
     }
 
-    if (!mixedAudioUrl) {
-      throw new Error('Audio mixing timeout');
+    // Download the clean audio from Hetzner
+    console.log('[mix-clean-audio] Downloading clean audio from Hetzner...');
+    const cleanAudioResponse = await fetch(hetznerResult.download_url);
+    
+    if (!cleanAudioResponse.ok) {
+      throw new Error('Failed to download clean audio from Hetzner');
     }
 
-    console.log('[mix-clean-audio] Downloading mixed audio...');
+    const cleanAudioBlob = await cleanAudioResponse.blob();
+    const cleanAudioBuffer = await cleanAudioBlob.arrayBuffer();
     
-    // Download the mixed audio
-    const mixedResponse = await fetch(mixedAudioUrl);
-    const mixedBlob = await mixedResponse.blob();
-    const mixedBuffer = await mixedBlob.arrayBuffer();
-    
-    // Upload to Supabase storage
+    // Upload to Supabase storage for permanent access
     const cleanFileName = `${user.id}/clean/${fileName}-clean.mp3`;
     
-    console.log('[mix-clean-audio] Uploading to storage:', cleanFileName);
+    console.log('[mix-clean-audio] Uploading to Supabase storage:', cleanFileName);
     
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('audio-files')
-      .upload(cleanFileName, mixedBuffer, {
+      .upload(cleanFileName, cleanAudioBuffer, {
         contentType: 'audio/mpeg',
         upsert: true,
       });

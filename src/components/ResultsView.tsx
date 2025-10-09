@@ -237,11 +237,12 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
         
         const analysis = JSON.parse(analysisData);
         const explicitWords = analysis.explicitWords?.map((w: any) => ({
-          timestamp: Math.max(0, (w.start || 0) - 0.15),
-          end: (w.end || (w.start + 0.5) || 0) + 0.25,
+          word: w.word,
+          timestamp: Math.max(0, (w.start || 0) - 0.2),
+          end: (w.end || (w.start + 0.5) || 0) + 0.3,
         })) || [];
         
-        console.log('[Download] Starting clean audio generation...');
+        console.log('[Download] Starting clean audio generation via Hetzner...');
         
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
@@ -267,7 +268,7 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
         }
         
         if (data?.cleanAudioUrl) {
-          console.log('[Download] Clean audio ready:', data.cleanAudioUrl);
+          console.log('[Download] Clean audio ready from Hetzner:', data.cleanAudioUrl);
           const link = document.createElement('a');
           link.href = data.cleanAudioUrl;
           link.download = `${fileName}_clean.mp3`;
