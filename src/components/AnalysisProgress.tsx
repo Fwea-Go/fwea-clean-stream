@@ -43,8 +43,8 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
         console.log("[AnalysisProgress] File converted to base64, length:", base64Audio.length);
 
-        setProgress(25);
-        setStatus("Processing audio...");
+        setProgress(10);
+        setStatus("Separating vocals from instrumentals...");
 
         // Get auth session
         const { data: { session } } = await supabase.auth.getSession();
@@ -52,68 +52,67 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
           throw new Error("You must be logged in to analyze audio");
         }
 
-        console.log("[AnalysisProgress] Auth session found, calling edge function");
+        console.log("[AnalysisProgress] Auth session found, separating audio");
 
-        setProgress(50);
-        setStatus("Transcribing audio with AI...");
+        // Step 1: Separate audio into vocals and instrumental
+        const { data: separationData, error: separationError } = await supabase.functions.invoke("separate-audio", {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: {
+            audioBase64: base64Audio,
+            fileName: audioFile.name,
+          },
+        });
 
-        // Call analyze-audio function with timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
-
-        try {
-          const { data, error } = await supabase.functions.invoke("analyze-audio", {
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-            },
-            body: {
-              audioBase64: base64Audio,
-              fileName: audioFile.name,
-            },
-          });
-
-          clearTimeout(timeoutId);
-
-          console.log("[AnalysisProgress] Edge function response:", { data, error });
-
-          if (error) {
-            console.error("[AnalysisProgress] Edge function error:", error);
-            throw new Error(error.message || "Failed to analyze audio");
-          }
-
-          if (!data || !data.success) {
-            console.error("[AnalysisProgress] Analysis unsuccessful:", data);
-            throw new Error(data?.error || "Analysis failed");
-          }
-
-          console.log("[AnalysisProgress] Analysis successful:", {
-            explicitWordsCount: data.explicitWords?.length,
-            language: data.language,
-            duration: data.duration
-          });
-
-          setProgress(75);
-          setStatus("Detecting explicit content...");
-
-          // Store the result and audio file for the ResultsView
-          const audioUrl = URL.createObjectURL(audioFile);
-          console.log("[AnalysisProgress] Storing audio URL:", audioUrl);
-          sessionStorage.setItem('audioAnalysis', JSON.stringify(data));
-          sessionStorage.setItem('audioUrl', audioUrl);
-
-          setProgress(100);
-          setStatus("Analysis complete!");
-
-          setTimeout(() => {
-            onComplete();
-          }, 1000);
-        } catch (fetchError) {
-          clearTimeout(timeoutId);
-          if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-            throw new Error("Analysis timed out. Please try with a shorter audio file.");
-          }
-          throw fetchError;
+        if (separationError || !separationData?.success) {
+          console.error("[AnalysisProgress] Separation error:", separationError);
+          throw new Error(separationData?.error || "Failed to separate audio");
         }
+
+        console.log("[AnalysisProgress] Audio separation complete");
+
+        setProgress(40);
+        setStatus("Analyzing vocals for explicit content...");
+
+        // Step 2: Analyze only the vocal stem for explicit content
+        const { data, error } = await supabase.functions.invoke("analyze-audio", {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: {
+            audioBase64: separationData.vocalsBase64,
+            fileName: `${audioFile.name}-vocals`,
+          },
+        });
+
+        if (error) {
+          console.error("[AnalysisProgress] Analysis error:", error);
+          throw new Error(error.message || "Failed to analyze audio");
+        }
+
+        if (!data || !data.success) {
+          console.error("[AnalysisProgress] Analysis unsuccessful:", data);
+          throw new Error(data?.error || "Analysis failed");
+        }
+
+        console.log("[AnalysisProgress] Analysis successful:", {
+          explicitWordsCount: data.explicitWords?.length,
+          language: data.language,
+          duration: data.duration
+        });
+
+        setProgress(100);
+        setStatus("Analysis complete!");
+
+        // Store the results with separated stems
+        sessionStorage.setItem('audioAnalysis', JSON.stringify(data));
+        sessionStorage.setItem('vocalsUrl', separationData.vocalsUrl);
+        sessionStorage.setItem('instrumentalUrl', separationData.instrumentalUrl);
+
+        setTimeout(() => {
+          onComplete();
+        }, 1000);
 
       } catch (error) {
         console.error("[AnalysisProgress] Error analyzing audio:", error);
@@ -162,7 +161,9 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
         <div className="space-y-3 text-center">
           <p className="text-sm text-muted-foreground">
-            Using AI to transcribe and detect explicit content in all languages
+            {progress < 40 
+              ? "Using AI to separate vocals from instrumentals" 
+              : "Analyzing vocals for explicit content in all languages"}
           </p>
         </div>
       </div>

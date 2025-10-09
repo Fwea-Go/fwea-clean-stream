@@ -26,7 +26,8 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   const [detectedWords, setDetectedWords] = useState<ExplicitWord[]>([]);
   const [transcript, setTranscript] = useState("");
   const [duration, setDuration] = useState(180);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const vocalsRef = useRef<HTMLAudioElement | null>(null);
+  const instrumentalRef = useRef<HTMLAudioElement | null>(null);
 
   const PREVIEW_LIMIT = 30; // 30 seconds
 
@@ -56,94 +57,119 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
     }
   }, []);
 
-  // Initialize audio element
+  // Initialize audio elements with separated stems
   useEffect(() => {
-    const audioUrl = sessionStorage.getItem('audioUrl');
-    console.log('[ResultsView] Loading audio, URL:', audioUrl);
+    const vocalsUrl = sessionStorage.getItem('vocalsUrl');
+    const instrumentalUrl = sessionStorage.getItem('instrumentalUrl');
     
-    if (audioUrl && !audioRef.current) {
-      const audio = new Audio(audioUrl);
-      
-      audio.addEventListener('loadedmetadata', () => {
-        console.log('[ResultsView] Audio loaded successfully, duration:', audio.duration);
+    console.log('[ResultsView] Loading separated stems:', { vocalsUrl, instrumentalUrl });
+    
+    if (vocalsUrl && instrumentalUrl && !vocalsRef.current && !instrumentalRef.current) {
+      // Initialize vocals audio
+      const vocalsAudio = new Audio(vocalsUrl);
+      vocalsAudio.addEventListener('loadedmetadata', () => {
+        console.log('[ResultsView] Vocals loaded, duration:', vocalsAudio.duration);
       });
       
-      audio.addEventListener('error', (e) => {
-        console.error('[ResultsView] Audio error:', e);
+      vocalsAudio.addEventListener('error', (e) => {
+        console.error('[ResultsView] Vocals error:', e);
       });
       
-      audio.addEventListener('timeupdate', () => {
-        setCurrentTime(audio.currentTime);
+      // Initialize instrumental audio
+      const instrumentalAudio = new Audio(instrumentalUrl);
+      instrumentalAudio.addEventListener('loadedmetadata', () => {
+        console.log('[ResultsView] Instrumental loaded, duration:', instrumentalAudio.duration);
+      });
+      
+      instrumentalAudio.addEventListener('error', (e) => {
+        console.error('[ResultsView] Instrumental error:', e);
+      });
+      
+      // Sync time updates from instrumental (which plays continuously)
+      instrumentalAudio.addEventListener('timeupdate', () => {
+        setCurrentTime(instrumentalAudio.currentTime);
+        
+        // Sync vocals to same time
+        if (vocalsAudio && Math.abs(vocalsAudio.currentTime - instrumentalAudio.currentTime) > 0.1) {
+          vocalsAudio.currentTime = instrumentalAudio.currentTime;
+        }
         
         // Check if we've reached preview limit
-        if (audio.currentTime >= PREVIEW_LIMIT && !hasReachedLimit) {
-          audio.pause();
+        if (instrumentalAudio.currentTime >= PREVIEW_LIMIT && !hasReachedLimit) {
+          instrumentalAudio.pause();
+          vocalsAudio.pause();
           setIsPlaying(false);
           setHasReachedLimit(true);
           setShowPaywall(true);
         }
       });
       
-      audio.addEventListener('ended', () => {
+      instrumentalAudio.addEventListener('ended', () => {
+        vocalsAudio.pause();
         setIsPlaying(false);
       });
       
-      audioRef.current = audio;
-      console.log('[ResultsView] Audio element initialized');
-    } else if (!audioUrl) {
-      console.error('[ResultsView] No audio URL found in sessionStorage');
+      vocalsRef.current = vocalsAudio;
+      instrumentalRef.current = instrumentalAudio;
+      
+      console.log('[ResultsView] Audio elements initialized with separated stems');
+    } else if (!vocalsUrl || !instrumentalUrl) {
+      console.error('[ResultsView] Missing separated stem URLs');
     }
 
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = '';
-        audioRef.current = null;
+      if (vocalsRef.current) {
+        vocalsRef.current.pause();
+        vocalsRef.current.src = '';
+        vocalsRef.current = null;
+      }
+      if (instrumentalRef.current) {
+        instrumentalRef.current.pause();
+        instrumentalRef.current.src = '';
+        instrumentalRef.current = null;
       }
     };
   }, []);
 
-  // Handle muting during explicit words with minimal bleed
+  // Handle muting vocals during explicit words (instrumental keeps playing)
   useEffect(() => {
-    if (audioRef.current && detectedWords.length > 0) {
-      // Use exact word timestamps for precise muting
+    if (vocalsRef.current && detectedWords.length > 0) {
+      // Check if we're currently on an explicit word
       const currentWord = detectedWords.find(word => {
         return currentTime >= word.timestamp && currentTime <= word.end;
       });
       
-      // Only mute if we're exactly within an explicit word's timestamp
-      audioRef.current.volume = currentWord ? 0 : 1;
+      // Mute vocals during explicit words, unmute otherwise
+      vocalsRef.current.volume = currentWord ? 0 : 1;
       
-      if (currentWord && audioRef.current.volume === 0) {
-        console.log('[ResultsView] Muting:', currentWord.word, 'at', currentTime.toFixed(2));
+      if (currentWord && vocalsRef.current.volume === 0) {
+        console.log('[ResultsView] Muting vocals:', currentWord.word, 'at', currentTime.toFixed(2));
       }
     }
   }, [currentTime, detectedWords]);
 
-  // Handle play/pause with actual audio
+  // Handle play/pause for both stems
   useEffect(() => {
-    if (audioRef.current) {
+    if (vocalsRef.current && instrumentalRef.current) {
       if (isPlaying) {
-        console.log('Attempting to play audio...');
-        const playPromise = audioRef.current.play();
+        console.log('Playing both stems...');
         
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              console.log('Audio playing successfully');
-            })
-            .catch(err => {
-              console.error('Error playing audio:', err);
-              setIsPlaying(false);
-              // User interaction might be required for autoplay
-              if (err.name === 'NotAllowedError') {
-                console.log('User interaction required to play audio');
-              }
-            });
-        }
+        // Start both at the same time
+        const playVocals = vocalsRef.current.play();
+        const playInstrumental = instrumentalRef.current.play();
+        
+        Promise.all([playVocals, playInstrumental])
+          .then(() => {
+            console.log('Both stems playing successfully');
+          })
+          .catch(err => {
+            console.error('Error playing stems:', err);
+            setIsPlaying(false);
+          });
       } else {
-        audioRef.current.pause();
-        console.log('Audio paused');
+        vocalsRef.current.pause();
+        instrumentalRef.current.pause();
+        console.log('Both stems paused');
       }
     }
   }, [isPlaying]);
@@ -154,15 +180,12 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
       return;
     }
     
-    if (!audioRef.current) {
-      console.error('Audio element not initialized');
+    if (!vocalsRef.current || !instrumentalRef.current) {
+      console.error('Audio elements not initialized');
       return;
     }
     
     console.log('Toggle play/pause, current state:', isPlaying);
-    console.log('Audio element ready state:', audioRef.current.readyState);
-    console.log('Audio element src:', audioRef.current.src);
-    
     setIsPlaying(!isPlaying);
   };
 
@@ -295,8 +318,8 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
           )}
           
           <div className="text-center text-xs text-muted-foreground mt-4 space-y-1">
-            <p>🎵 Current mode: Full audio muting during explicit words</p>
-            <p className="text-muted-foreground/70">Vocal-only isolation (keeping instrumentals) coming soon!</p>
+            <p>✨ Vocals separated and analyzed independently</p>
+            <p className="text-primary">🎵 Instrumental keeps playing while vocals are muted during explicit words</p>
           </div>
           </div>
         </div>

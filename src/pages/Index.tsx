@@ -35,7 +35,8 @@ const Index = () => {
   const handleFileUpload = (file: File) => {
     // Clear previous analysis data
     sessionStorage.removeItem('audioAnalysis');
-    sessionStorage.removeItem('audioUrl');
+    sessionStorage.removeItem('vocalsUrl');
+    sessionStorage.removeItem('instrumentalUrl');
     setUploadedFile(file);
     setAppState("analyzing");
   };
@@ -43,7 +44,8 @@ const Index = () => {
   const handleAnalyzeAnother = () => {
     // Clear all data and go back to upload
     sessionStorage.removeItem('audioAnalysis');
-    sessionStorage.removeItem('audioUrl');
+    sessionStorage.removeItem('vocalsUrl');
+    sessionStorage.removeItem('instrumentalUrl');
     setUploadedFile(null);
     setAppState("upload");
   };
