@@ -83,39 +83,33 @@ serve(async (req) => {
 
     const replicate = new Replicate({ auth: REPLICATE_API_KEY });
 
-    console.log("[SEPARATE-AUDIO] Starting Demucs separation...");
+    console.log("[SEPARATE-AUDIO] Starting Spleeter separation...");
     
-    // Use the correct Demucs model for high-quality source separation
+    // Use Spleeter for fast, high-quality source separation
     const output = await replicate.run(
-      "cjwbw/demucs:1d1f85af5a0bb1dba31488f1cf76ca3d134f2bb12c2fb2ba6f68e7fcd89c3e7d",
+      "aleksey-boyko/spleeter:4f5fe43ea6dc96fb17f3f87836c0ef04ca8cb7a5c37a97d32fe0b5e8df26f97f",
       {
         input: {
           audio: urlData.publicUrl,
+          stems: 2, // 2 stems = vocals + accompaniment (fastest)
         }
       }
     ) as any;
 
     console.log("[SEPARATE-AUDIO] Separation complete:", output);
 
-    // Download separated stems
-    // Demucs returns: vocals, drums, bass, other
+    // Download separated stems from Spleeter
+    // Spleeter returns: vocals and accompaniment
     const vocalsUrl = output.vocals;
-    const drumsUrl = output.drums;
-    const bassUrl = output.bass;
-    const otherUrl = output.other;
+    const accompanimentUrl = output.accompaniment;
 
     console.log("[SEPARATE-AUDIO] Downloading vocals:", vocalsUrl);
     const vocalsResponse = await fetch(vocalsUrl);
     const vocalsBuffer = new Uint8Array(await vocalsResponse.arrayBuffer());
 
-    // Create instrumental by downloading all non-vocal stems
-    console.log("[SEPARATE-AUDIO] Creating instrumental mix");
-    
-    // For now, use "other" as instrumental (contains melody/harmony without vocals)
-    // In a full implementation, you'd mix drums+bass+other
-    console.log("[SEPARATE-AUDIO] Downloading instrumental (other):", otherUrl);
-    const instrumentalResponse = await fetch(otherUrl);
-    const instrumentalBuffer = new Uint8Array(await instrumentalResponse.arrayBuffer());
+    console.log("[SEPARATE-AUDIO] Downloading accompaniment:", accompanimentUrl);
+    const accompanimentResponse = await fetch(accompanimentUrl);
+    const instrumentalBuffer = new Uint8Array(await accompanimentResponse.arrayBuffer());
 
     // Store separated stems
     const vocalsPath = `${user.id}/stems/${fileName}-vocals.mp3`;

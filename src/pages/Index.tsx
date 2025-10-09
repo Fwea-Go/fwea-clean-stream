@@ -5,6 +5,7 @@ import { Hero } from "@/components/Hero";
 import { UploadZone } from "@/components/UploadZone";
 import { AnalysisProgress } from "@/components/AnalysisProgress";
 import { ResultsView } from "@/components/ResultsView";
+import { LanguageBanner } from "@/components/LanguageBanner";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 
@@ -66,7 +67,7 @@ const Index = () => {
   }
 
   return (
-    <main className="min-h-screen relative">
+    <main className="min-h-screen relative pb-16">
       {user && (
         <div className="absolute top-4 right-4 z-50">
           <Button
@@ -89,6 +90,8 @@ const Index = () => {
       {appState === "results" && uploadedFile && (
         <ResultsView fileName={uploadedFile.name} onAnalyzeAnother={handleAnalyzeAnother} />
       )}
+      
+      <LanguageBanner />
     </main>
   );
 };
