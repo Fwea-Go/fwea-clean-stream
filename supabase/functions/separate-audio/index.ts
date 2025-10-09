@@ -87,11 +87,10 @@ serve(async (req) => {
     
     // Use Spleeter for fast, high-quality source separation
     const output = await replicate.run(
-      "aleksey-boyko/spleeter:4f5fe43ea6dc96fb17f3f87836c0ef04ca8cb7a5c37a97d32fe0b5e8df26f97f",
+      "soykertje/spleeter:cd128044253523c86abfd743dea680c88559ad975ccd72378c8433f067ab5d0a",
       {
         input: {
           audio: urlData.publicUrl,
-          stems: 2, // 2 stems = vocals + accompaniment (fastest)
         }
       }
     ) as any;
