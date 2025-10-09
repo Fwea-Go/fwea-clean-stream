@@ -28,10 +28,9 @@ export const ResultsView = ({ fileName }: ResultsViewProps) => {
 
   const PREVIEW_LIMIT = 30; // 30 seconds
 
-  // Load real analysis data and audio
+  // Load real analysis data
   useEffect(() => {
     const analysisData = sessionStorage.getItem('audioAnalysis');
-    const audioUrl = sessionStorage.getItem('audioUrl');
     
     if (analysisData) {
       try {
@@ -52,13 +51,19 @@ export const ResultsView = ({ fileName }: ResultsViewProps) => {
         console.error("Error loading analysis:", error);
       }
     }
+  }, []);
 
-    // Initialize audio element
+  // Initialize audio element
+  useEffect(() => {
+    const audioUrl = sessionStorage.getItem('audioUrl');
+    
     if (audioUrl && !audioRef.current) {
       const audio = new Audio(audioUrl);
+      
       audio.addEventListener('loadedmetadata', () => {
         console.log('Audio loaded, duration:', audio.duration);
       });
+      
       audio.addEventListener('timeupdate', () => {
         setCurrentTime(audio.currentTime);
         
@@ -69,28 +74,35 @@ export const ResultsView = ({ fileName }: ResultsViewProps) => {
           setHasReachedLimit(true);
           setShowPaywall(true);
         }
-
-        // Check if any explicit words should be muted at current time
-        const shouldMute = detectedWords.some(word => 
-          audio.currentTime >= word.timestamp && 
-          audio.currentTime <= word.timestamp + 0.5 // Mute for 0.5 seconds
-        );
-        
-        audio.volume = shouldMute ? 0 : 1;
       });
+      
       audio.addEventListener('ended', () => {
         setIsPlaying(false);
       });
+      
       audioRef.current = audio;
     }
 
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
+        audioRef.current.src = '';
         audioRef.current = null;
       }
     };
-  }, [detectedWords]);
+  }, []);
+
+  // Handle muting during explicit words
+  useEffect(() => {
+    if (audioRef.current && detectedWords.length > 0) {
+      const shouldMute = detectedWords.some(word => 
+        currentTime >= word.timestamp && 
+        currentTime <= word.timestamp + 0.5 // Mute for 0.5 seconds
+      );
+      
+      audioRef.current.volume = shouldMute ? 0 : 1;
+    }
+  }, [currentTime, detectedWords]);
 
   // Handle play/pause with actual audio
   useEffect(() => {
