@@ -27,32 +27,35 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
       try {
         console.log("[AnalysisProgress] Starting analysis for file:", audioFile.name, "Size:", audioFile.size);
         
-        // Convert file to base64
-        const reader = new FileReader();
-        reader.readAsDataURL(audioFile);
-        
-        await new Promise((resolve) => {
-          reader.onloadend = resolve;
-        });
-
-        const base64Audio = reader.result?.toString().split(',')[1];
-        
-        if (!base64Audio) {
-          throw new Error("Failed to read audio file");
-        }
-
-        console.log("[AnalysisProgress] File converted to base64, length:", base64Audio.length);
-
-        setProgress(10);
-        setStatus("Separating vocals from instrumentals...");
-
         // Get auth session
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           throw new Error("You must be logged in to analyze audio");
         }
 
-        console.log("[AnalysisProgress] Auth session found, separating audio");
+        console.log("[AnalysisProgress] Auth session found, uploading to storage");
+
+        setProgress(5);
+        setStatus("Uploading audio file...");
+
+        // Upload file directly to storage
+        const storagePath = `${session.user.id}/uploads/${Date.now()}-${audioFile.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from("audio-files")
+          .upload(storagePath, audioFile, {
+            contentType: audioFile.type,
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.error("[AnalysisProgress] Upload error:", uploadError);
+          throw new Error(`Failed to upload file: ${uploadError.message}`);
+        }
+
+        console.log("[AnalysisProgress] File uploaded to:", storagePath);
+
+        setProgress(10);
+        setStatus("Separating vocals from instrumentals...");
 
         // Step 1: Separate audio into vocals and instrumental
         const { data: separationData, error: separationError } = await supabase.functions.invoke("separate-audio", {
@@ -60,7 +63,7 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
             Authorization: `Bearer ${session.access_token}`,
           },
           body: {
-            audioBase64: base64Audio,
+            storagePath: storagePath,
             fileName: audioFile.name,
           },
         });
@@ -81,7 +84,7 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
             Authorization: `Bearer ${session.access_token}`,
           },
           body: {
-            audioBase64: separationData.vocalsBase64,
+            storagePath: separationData.vocalsStoragePath,
             fileName: `${audioFile.name}-vocals`,
           },
         });

@@ -60,22 +60,27 @@ serve(async (req) => {
 
     console.log("[ANALYZE-AUDIO] User authenticated:", user.id);
 
-    const { audioBase64, fileName } = await req.json();
-    if (!audioBase64 || !fileName) {
-      console.error("[ANALYZE-AUDIO] Missing data:", { hasAudio: !!audioBase64, hasFileName: !!fileName });
-      throw new Error("Missing audio data or file name");
+    const { storagePath, fileName } = await req.json();
+    if (!storagePath || !fileName) {
+      console.error("[ANALYZE-AUDIO] Missing data:", { hasStoragePath: !!storagePath, hasFileName: !!fileName });
+      throw new Error("Missing storage path or file name");
     }
 
-    console.log("[ANALYZE-AUDIO] Received file:", fileName, "Base64 length:", audioBase64.length);
+    console.log("[ANALYZE-AUDIO] Processing file from storage:", storagePath);
 
-    // Decode base64 audio
-    console.log("[ANALYZE-AUDIO] Decoding base64...");
-    const binaryString = atob(audioBase64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
+    // Download audio from storage
+    console.log("[ANALYZE-AUDIO] Downloading from storage...");
+    const { data: audioData, error: downloadError } = await supabaseClient.storage
+      .from("audio-files")
+      .download(storagePath);
+
+    if (downloadError || !audioData) {
+      console.error("[ANALYZE-AUDIO] Download error:", downloadError);
+      throw new Error(`Failed to download audio: ${downloadError?.message || 'No data'}`);
     }
-    console.log("[ANALYZE-AUDIO] Base64 decoded, bytes length:", bytes.length);
+
+    const bytes = new Uint8Array(await audioData.arrayBuffer());
+    console.log("[ANALYZE-AUDIO] File downloaded, bytes length:", bytes.length);
 
     // Transcribe audio using OpenAI Whisper
     console.log("[ANALYZE-AUDIO] Preparing Whisper request");

@@ -43,35 +43,22 @@ serve(async (req) => {
 
     console.log("[SEPARATE-AUDIO] User authenticated:", user.id);
 
-    const { audioBase64, fileName } = await req.json();
-    if (!audioBase64 || !fileName) {
+    const { storagePath, fileName } = await req.json();
+    if (!storagePath || !fileName) {
       console.error("[SEPARATE-AUDIO] Missing data");
-      throw new Error("Missing audio data or file name");
+      throw new Error("Missing storage path or file name");
     }
 
-    console.log("[SEPARATE-AUDIO] Received file:", fileName);
-
-    // Upload audio to storage temporarily
-    const audioBuffer = Uint8Array.from(atob(audioBase64), c => c.charCodeAt(0));
-    const storagePath = `${user.id}/temp/${fileName}`;
-    
-    console.log("[SEPARATE-AUDIO] Uploading to storage:", storagePath);
-    const { data: uploadData, error: uploadError } = await supabaseClient.storage
-      .from("audio-files")
-      .upload(storagePath, audioBuffer, {
-        contentType: "audio/mpeg",
-        upsert: true,
-      });
-
-    if (uploadError) {
-      console.error("[SEPARATE-AUDIO] Upload error:", uploadError);
-      throw uploadError;
-    }
+    console.log("[SEPARATE-AUDIO] Processing file from storage:", storagePath);
 
     // Get public URL for Replicate
     const { data: urlData } = supabaseClient.storage
       .from("audio-files")
       .getPublicUrl(storagePath);
+    
+    if (!urlData?.publicUrl) {
+      throw new Error("Failed to get public URL for audio file");
+    }
 
     console.log("[SEPARATE-AUDIO] Public URL:", urlData.publicUrl);
 
@@ -148,10 +135,16 @@ serve(async (req) => {
       .from("audio-files")
       .getPublicUrl(instrumentalPath);
 
-    // Convert vocals to base64 for analysis
-    const vocalsBase64 = btoa(String.fromCharCode(...vocalsBuffer));
+    // Store vocals in storage for analysis (instead of base64)
+    const vocalsAnalysisPath = `${user.id}/vocals/${fileName}-vocals.mp3`;
+    await supabaseClient.storage
+      .from("audio-files")
+      .upload(vocalsAnalysisPath, vocalsBuffer, {
+        contentType: "audio/mpeg",
+        upsert: true,
+      });
 
-    // Clean up temp file
+    // Clean up uploaded file
     await supabaseClient.storage
       .from("audio-files")
       .remove([storagePath]);
@@ -161,7 +154,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        vocalsBase64: vocalsBase64,
+        vocalsStoragePath: vocalsAnalysisPath,
         vocalsUrl: vocalsUrlData.publicUrl,
         instrumentalUrl: instrumentalUrlData.publicUrl,
       }),
