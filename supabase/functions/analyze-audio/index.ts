@@ -217,7 +217,9 @@ serve(async (req) => {
       throw new Error("WHISPER_API_URL not configured");
     }
 
-    console.log("[ANALYZE-AUDIO] Using self-hosted Whisper at:", whisperApiUrl);
+    // Remove trailing /asr if present since we'll add it with query params
+    const baseUrl = whisperApiUrl.replace(/\/asr\/?$/, '');
+    console.log("[ANALYZE-AUDIO] Using self-hosted Whisper at:", baseUrl);
 
     // Prepare request for ahmetoner/whisper-asr-webservice
     const formData = new FormData();
@@ -234,7 +236,7 @@ serve(async (req) => {
       
       try {
         // ahmetoner/whisper-asr-webservice API endpoint
-        whisperResponse = await fetch(`${whisperApiUrl}/asr?task=transcribe&output=json`, {
+        whisperResponse = await fetch(`${baseUrl}/asr?task=transcribe&output=json`, {
           method: "POST",
           body: formData,
         });
