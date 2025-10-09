@@ -22,7 +22,6 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [showPaywall, setShowPaywall] = useState(false);
-  const [hasReachedLimit, setHasReachedLimit] = useState(false);
   const [detectedWords, setDetectedWords] = useState<ExplicitWord[]>([]);
   const [transcript, setTranscript] = useState("");
   const [duration, setDuration] = useState(180);
@@ -30,7 +29,7 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   const vocalsRef = useRef<HTMLAudioElement | null>(null);
   const instrumentalRef = useRef<HTMLAudioElement | null>(null);
 
-  const PREVIEW_LIMIT = 30; // 30 seconds
+  const PREVIEW_LIMIT = 30; // 30 seconds free preview
 
   // Load real analysis data
   useEffect(() => {
@@ -106,12 +105,11 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
           vocalsAudio.currentTime = instrumentalAudio.currentTime;
         }
         
-        // Check if we've reached preview limit
-        if (instrumentalAudio.currentTime >= PREVIEW_LIMIT && !hasReachedLimit) {
+        // Check if we've reached preview limit (but allow replay)
+        if (instrumentalAudio.currentTime >= PREVIEW_LIMIT) {
           instrumentalAudio.pause();
           vocalsAudio.pause();
           setIsPlaying(false);
-          setHasReachedLimit(true);
           setShowPaywall(true);
         }
       });
@@ -187,14 +185,16 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   }, [isPlaying]);
 
   const togglePlayPause = () => {
-    if (currentTime >= PREVIEW_LIMIT) {
-      setShowPaywall(true);
-      return;
-    }
-    
     if (!vocalsRef.current || !instrumentalRef.current) {
       console.error('Audio elements not initialized');
       return;
+    }
+    
+    // If at end of preview, reset to beginning
+    if (currentTime >= PREVIEW_LIMIT) {
+      vocalsRef.current.currentTime = 0;
+      instrumentalRef.current.currentTime = 0;
+      setCurrentTime(0);
     }
     
     console.log('Toggle play/pause, current state:', isPlaying);
@@ -323,7 +323,7 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
                 ) : (
                   <Play className="h-5 w-5 mr-2" />
                 )}
-                {isDemo ? "Demo Mode - No Audio" : currentTime >= PREVIEW_LIMIT ? "Preview Ended" : isPlaying ? "Pause" : "Play Preview"}
+                {isDemo ? "Demo Mode - No Audio" : currentTime >= PREVIEW_LIMIT ? "Replay Preview" : isPlaying ? "Pause" : "Play Preview"}
               </Button>
               <Button
                 size="lg"
@@ -336,10 +336,10 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
               </Button>
             </div>
 
-            {hasReachedLimit && (
-            <div className="flex items-center gap-2 justify-center text-secondary text-sm animate-fade-in">
+            {currentTime >= PREVIEW_LIMIT && (
+            <div className="flex items-center gap-2 justify-center text-accent text-sm animate-fade-in">
               <AlertCircle className="h-4 w-4" />
-              <span>Preview limit reached. Upgrade to download the full clean version.</span>
+              <span>30s preview complete. Click play to listen again or upgrade to download the full version.</span>
             </div>
           )}
           
