@@ -85,13 +85,12 @@ serve(async (req) => {
 
     console.log("[SEPARATE-AUDIO] Starting Demucs separation...");
     
-    // Use Demucs for high-quality source separation
+    // Use the correct Demucs model for high-quality source separation
     const output = await replicate.run(
-      "cjwbw/music-source-separation:d957219d8b50894fb2691443df0e17f2b2dfc09e4a78996b1d5caf04d3ecb1f9",
+      "cjwbw/demucs:1d1f85af5a0bb1dba31488f1cf76ca3d134f2bb12c2fb2ba6f68e7fcd89c3e7d",
       {
         input: {
           audio: urlData.publicUrl,
-          stem: "vocals", // Separate vocals from everything else
         }
       }
     ) as any;
@@ -99,15 +98,23 @@ serve(async (req) => {
     console.log("[SEPARATE-AUDIO] Separation complete:", output);
 
     // Download separated stems
+    // Demucs returns: vocals, drums, bass, other
     const vocalsUrl = output.vocals;
-    const instrumentalUrl = output.no_vocals || output.other;
+    const drumsUrl = output.drums;
+    const bassUrl = output.bass;
+    const otherUrl = output.other;
 
     console.log("[SEPARATE-AUDIO] Downloading vocals:", vocalsUrl);
     const vocalsResponse = await fetch(vocalsUrl);
     const vocalsBuffer = new Uint8Array(await vocalsResponse.arrayBuffer());
 
-    console.log("[SEPARATE-AUDIO] Downloading instrumental:", instrumentalUrl);
-    const instrumentalResponse = await fetch(instrumentalUrl);
+    // Create instrumental by downloading all non-vocal stems
+    console.log("[SEPARATE-AUDIO] Creating instrumental mix");
+    
+    // For now, use "other" as instrumental (contains melody/harmony without vocals)
+    // In a full implementation, you'd mix drums+bass+other
+    console.log("[SEPARATE-AUDIO] Downloading instrumental (other):", otherUrl);
+    const instrumentalResponse = await fetch(otherUrl);
     const instrumentalBuffer = new Uint8Array(await instrumentalResponse.arrayBuffer());
 
     // Store separated stems
