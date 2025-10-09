@@ -1,13 +1,35 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState } from "react";
+import { Hero } from "@/components/Hero";
+import { UploadZone } from "@/components/UploadZone";
+import { AnalysisProgress } from "@/components/AnalysisProgress";
+import { ResultsView } from "@/components/ResultsView";
+
+type AppState = "hero" | "upload" | "analyzing" | "results";
 
 const Index = () => {
+  const [appState, setAppState] = useState<AppState>("hero");
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+
+  const handleGetStarted = () => {
+    setAppState("upload");
+  };
+
+  const handleFileUpload = (file: File) => {
+    setUploadedFile(file);
+    setAppState("analyzing");
+  };
+
+  const handleAnalysisComplete = () => {
+    setAppState("results");
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
-    </div>
+    <main className="min-h-screen">
+      {appState === "hero" && <Hero onGetStarted={handleGetStarted} />}
+      {appState === "upload" && <UploadZone onFileUpload={handleFileUpload} />}
+      {appState === "analyzing" && <AnalysisProgress onComplete={handleAnalysisComplete} />}
+      {appState === "results" && uploadedFile && <ResultsView fileName={uploadedFile.name} />}
+    </main>
   );
 };
 
