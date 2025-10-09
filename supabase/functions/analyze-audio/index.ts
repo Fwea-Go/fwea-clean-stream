@@ -82,7 +82,7 @@ serve(async (req) => {
     const bytes = new Uint8Array(await audioData.arrayBuffer());
     console.log("[ANALYZE-AUDIO] File downloaded, bytes length:", bytes.length);
 
-    // Transcribe audio using OpenAI Whisper
+    // Transcribe audio using OpenAI Whisper with retry logic
     console.log("[ANALYZE-AUDIO] Preparing Whisper request");
     const formData = new FormData();
     const blob = new Blob([bytes], { type: "audio/mpeg" });
@@ -97,21 +97,61 @@ serve(async (req) => {
       throw new Error("OPENAI_API_KEY not configured");
     }
 
-    console.log("[ANALYZE-AUDIO] Calling OpenAI Whisper API...");
-    const whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${openaiApiKey}`,
-      },
-      body: formData,
-    });
+    // Retry logic for transient errors
+    const maxRetries = 3;
+    let whisperResponse;
+    let lastError;
 
-    console.log("[ANALYZE-AUDIO] Whisper response status:", whisperResponse.status);
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      console.log(`[ANALYZE-AUDIO] Calling OpenAI Whisper API (attempt ${attempt}/${maxRetries})...`);
+      
+      try {
+        whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${openaiApiKey}`,
+          },
+          body: formData,
+        });
 
-    if (!whisperResponse.ok) {
-      const error = await whisperResponse.text();
-      console.error("[ANALYZE-AUDIO] Whisper error:", error);
-      throw new Error(`Whisper API error: ${error}`);
+        console.log("[ANALYZE-AUDIO] Whisper response status:", whisperResponse.status);
+
+        if (whisperResponse.ok) {
+          break; // Success!
+        }
+
+        const errorText = await whisperResponse.text();
+        console.error(`[ANALYZE-AUDIO] Whisper error (attempt ${attempt}):`, errorText);
+        
+        // Parse error to check if it's retryable
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: { message: errorText } };
+        }
+
+        // Retry on 500 server errors, don't retry on client errors (4xx)
+        if (whisperResponse.status >= 500 && attempt < maxRetries) {
+          const waitTime = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s
+          console.log(`[ANALYZE-AUDIO] Retrying in ${waitTime}ms...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          lastError = errorData.error?.message || errorText;
+          continue;
+        }
+
+        // Don't retry on client errors or last attempt
+        throw new Error(errorData.error?.message || errorText);
+      } catch (error) {
+        if (attempt === maxRetries) {
+          throw new Error(`Whisper API failed after ${maxRetries} attempts: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    if (!whisperResponse || !whisperResponse.ok) {
+      throw new Error(`Whisper API error: ${lastError || "Unknown error"}`);
     }
 
     const transcription = await whisperResponse.json();

@@ -91,12 +91,21 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
         if (error) {
           console.error("[AnalysisProgress] Analysis error:", error);
-          throw new Error(error.message || "Failed to analyze audio");
+          const errorMsg = error.message || "Failed to analyze audio";
+          // Check for specific error types
+          if (errorMsg.includes("Whisper API failed after")) {
+            throw new Error("OpenAI service is temporarily unavailable. Please try again in a few moments.");
+          }
+          throw new Error(errorMsg);
         }
 
         if (!data || !data.success) {
           console.error("[AnalysisProgress] Analysis unsuccessful:", data);
-          throw new Error(data?.error || "Analysis failed");
+          const errorMsg = data?.error || "Analysis failed";
+          if (errorMsg.includes("Whisper API") || errorMsg.includes("server_error")) {
+            throw new Error("AI analysis service is temporarily unavailable. Please try again in a few moments.");
+          }
+          throw new Error(errorMsg);
         }
 
         console.log("[AnalysisProgress] Analysis successful:", {
