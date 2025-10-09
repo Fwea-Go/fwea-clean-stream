@@ -33,8 +33,19 @@ const Index = () => {
   };
 
   const handleFileUpload = (file: File) => {
+    // Clear previous analysis data
+    sessionStorage.removeItem('audioAnalysis');
+    sessionStorage.removeItem('audioUrl');
     setUploadedFile(file);
     setAppState("analyzing");
+  };
+
+  const handleAnalyzeAnother = () => {
+    // Clear all data and go back to upload
+    sessionStorage.removeItem('audioAnalysis');
+    sessionStorage.removeItem('audioUrl');
+    setUploadedFile(null);
+    setAppState("upload");
   };
 
   const handleAnalysisComplete = () => {
@@ -73,7 +84,9 @@ const Index = () => {
       {appState === "analyzing" && uploadedFile && (
         <AnalysisProgress onComplete={handleAnalysisComplete} audioFile={uploadedFile} />
       )}
-      {appState === "results" && uploadedFile && <ResultsView fileName={uploadedFile.name} />}
+      {appState === "results" && uploadedFile && (
+        <ResultsView fileName={uploadedFile.name} onAnalyzeAnother={handleAnalyzeAnother} />
+      )}
     </main>
   );
 };

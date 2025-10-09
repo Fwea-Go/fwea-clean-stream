@@ -97,6 +97,7 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
           // Store the result and audio file for the ResultsView
           const audioUrl = URL.createObjectURL(audioFile);
+          console.log("[AnalysisProgress] Storing audio URL:", audioUrl);
           sessionStorage.setItem('audioAnalysis', JSON.stringify(data));
           sessionStorage.setItem('audioUrl', audioUrl);
 

@@ -14,9 +14,10 @@ interface ExplicitWord {
 
 interface ResultsViewProps {
   fileName: string;
+  onAnalyzeAnother: () => void;
 }
 
-export const ResultsView = ({ fileName }: ResultsViewProps) => {
+export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [showPaywall, setShowPaywall] = useState(false);
@@ -56,12 +57,17 @@ export const ResultsView = ({ fileName }: ResultsViewProps) => {
   // Initialize audio element
   useEffect(() => {
     const audioUrl = sessionStorage.getItem('audioUrl');
+    console.log('[ResultsView] Loading audio, URL:', audioUrl);
     
     if (audioUrl && !audioRef.current) {
       const audio = new Audio(audioUrl);
       
       audio.addEventListener('loadedmetadata', () => {
-        console.log('Audio loaded, duration:', audio.duration);
+        console.log('[ResultsView] Audio loaded successfully, duration:', audio.duration);
+      });
+      
+      audio.addEventListener('error', (e) => {
+        console.error('[ResultsView] Audio error:', e);
       });
       
       audio.addEventListener('timeupdate', () => {
@@ -81,6 +87,9 @@ export const ResultsView = ({ fileName }: ResultsViewProps) => {
       });
       
       audioRef.current = audio;
+      console.log('[ResultsView] Audio element initialized');
+    } else if (!audioUrl) {
+      console.error('[ResultsView] No audio URL found in sessionStorage');
     }
 
     return () => {
@@ -108,12 +117,26 @@ export const ResultsView = ({ fileName }: ResultsViewProps) => {
   useEffect(() => {
     if (audioRef.current) {
       if (isPlaying) {
-        audioRef.current.play().catch(err => {
-          console.error('Error playing audio:', err);
-          setIsPlaying(false);
-        });
+        console.log('Attempting to play audio...');
+        const playPromise = audioRef.current.play();
+        
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              console.log('Audio playing successfully');
+            })
+            .catch(err => {
+              console.error('Error playing audio:', err);
+              setIsPlaying(false);
+              // User interaction might be required for autoplay
+              if (err.name === 'NotAllowedError') {
+                console.log('User interaction required to play audio');
+              }
+            });
+        }
       } else {
         audioRef.current.pause();
+        console.log('Audio paused');
       }
     }
   }, [isPlaying]);
@@ -124,9 +147,16 @@ export const ResultsView = ({ fileName }: ResultsViewProps) => {
       return;
     }
     
-    if (audioRef.current) {
-      setIsPlaying(!isPlaying);
+    if (!audioRef.current) {
+      console.error('Audio element not initialized');
+      return;
     }
+    
+    console.log('Toggle play/pause, current state:', isPlaying);
+    console.log('Audio element ready state:', audioRef.current.readyState);
+    console.log('Audio element src:', audioRef.current.src);
+    
+    setIsPlaying(!isPlaying);
   };
 
   const formatTime = (seconds: number) => {
@@ -145,7 +175,14 @@ export const ResultsView = ({ fileName }: ResultsViewProps) => {
           <h2 className="text-4xl font-bold mb-3">
             Analysis <span className="text-primary neon-text">Complete</span>
           </h2>
-          <p className="text-muted-foreground text-lg">{fileName}</p>
+          <p className="text-muted-foreground text-lg mb-4">{fileName}</p>
+          <Button
+            variant="outline"
+            onClick={onAnalyzeAnother}
+            className="border-primary text-primary hover:bg-primary/10"
+          >
+            Clean Another Song
+          </Button>
         </div>
 
         {/* Stats Cards */}
