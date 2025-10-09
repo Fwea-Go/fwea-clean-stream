@@ -71,11 +71,17 @@ serve(async (req) => {
     const replicate = new Replicate({ auth: REPLICATE_API_KEY });
 
     console.log("[SEPARATE-AUDIO] Starting Spleeter separation...");
+    console.log("[SEPARATE-AUDIO] Audio URL:", urlData.publicUrl);
     
     // Use Spleeter for fast, high-quality source separation
     let output: any;
     try {
-      output = await replicate.run(
+      // Set a reasonable timeout (2 minutes)
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Audio separation timed out after 2 minutes')), 120000)
+      );
+
+      const separationPromise = replicate.run(
         "soykertje/spleeter:cd128044253523c86abfd743dea680c88559ad975ccd72378c8433f067ab5d0a",
         {
           input: {
@@ -84,29 +90,59 @@ serve(async (req) => {
             audio_format: "mp3"
           }
         }
-      ) as any;
+      );
+
+      output = await Promise.race([separationPromise, timeoutPromise]) as any;
+      console.log("[SEPARATE-AUDIO] Separation completed successfully");
     } catch (replicateError: any) {
       console.error("[SEPARATE-AUDIO] Replicate API error:", replicateError);
+      console.error("[SEPARATE-AUDIO] Error details:", JSON.stringify(replicateError, null, 2));
+      
+      if (replicateError.message?.includes('timed out')) {
+        throw new Error("Audio separation is taking longer than expected. This can happen with longer songs. Please try with a shorter audio file (under 2 minutes).");
+      }
+      
       if (replicateError.response?.status === 402) {
         throw new Error("Replicate API requires payment. Please add credits at https://replicate.com/account/billing");
       }
-      throw new Error(`Replicate API error: ${replicateError.message || 'Unknown error'}`);
+      
+      if (replicateError.response?.status === 500) {
+        throw new Error("Replicate service error. Please try again in a few moments.");
+      }
+      
+      throw new Error(`Audio separation failed: ${replicateError.message || 'Unknown error'}. Try with a shorter audio file.`);
     }
 
-    console.log("[SEPARATE-AUDIO] Separation complete:", output);
+    if (!output || !output.vocals || !output.accompaniment) {
+      console.error("[SEPARATE-AUDIO] Invalid output from Spleeter:", output);
+      throw new Error("Audio separation failed - invalid output from AI model");
+    }
+
+    console.log("[SEPARATE-AUDIO] Separation complete:", {
+      hasVocals: !!output.vocals,
+      hasAccompaniment: !!output.accompaniment
+    });
 
     // Download separated stems from Spleeter
     // Spleeter returns: vocals and accompaniment
     const vocalsUrl = output.vocals;
     const accompanimentUrl = output.accompaniment;
 
-    console.log("[SEPARATE-AUDIO] Downloading vocals:", vocalsUrl);
+    console.log("[SEPARATE-AUDIO] Downloading vocals from:", vocalsUrl);
     const vocalsResponse = await fetch(vocalsUrl);
+    if (!vocalsResponse.ok) {
+      throw new Error(`Failed to download vocals: ${vocalsResponse.statusText}`);
+    }
     const vocalsBuffer = new Uint8Array(await vocalsResponse.arrayBuffer());
+    console.log("[SEPARATE-AUDIO] Vocals downloaded, size:", vocalsBuffer.length, "bytes");
 
-    console.log("[SEPARATE-AUDIO] Downloading accompaniment:", accompanimentUrl);
+    console.log("[SEPARATE-AUDIO] Downloading accompaniment from:", accompanimentUrl);
     const accompanimentResponse = await fetch(accompanimentUrl);
+    if (!accompanimentResponse.ok) {
+      throw new Error(`Failed to download instrumental: ${accompanimentResponse.statusText}`);
+    }
     const instrumentalBuffer = new Uint8Array(await accompanimentResponse.arrayBuffer());
+    console.log("[SEPARATE-AUDIO] Instrumental downloaded, size:", instrumentalBuffer.length, "bytes");
 
     // Store separated stems
     const vocalsPath = `${user.id}/stems/${fileName}-vocals.mp3`;

@@ -76,7 +76,18 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
         if (separationError || !separationData?.success) {
           console.error("[AnalysisProgress] Separation error:", separationError);
-          throw new Error(separationData?.error || "Failed to separate audio");
+          const errorMsg = separationData?.error || separationError?.message || "Failed to separate audio";
+          
+          // Provide helpful error messages
+          if (errorMsg.includes('timed out') || errorMsg.includes('longer than expected')) {
+            throw new Error("Audio separation timed out. Please try with a shorter song (under 2 minutes recommended).");
+          }
+          
+          if (errorMsg.includes('payment') || errorMsg.includes('credits')) {
+            throw new Error("Audio separation service requires credits. Please contact support.");
+          }
+          
+          throw new Error(errorMsg);
         }
 
         console.log("[AnalysisProgress] Audio separation complete");
