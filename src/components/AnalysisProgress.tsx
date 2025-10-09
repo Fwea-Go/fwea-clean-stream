@@ -95,8 +95,10 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
           setProgress(75);
           setStatus("Detecting explicit content...");
 
-          // Store the result for the ResultsView
+          // Store the result and audio file for the ResultsView
+          const audioUrl = URL.createObjectURL(audioFile);
           sessionStorage.setItem('audioAnalysis', JSON.stringify(data));
+          sessionStorage.setItem('audioUrl', audioUrl);
 
           setProgress(100);
           setStatus("Analysis complete!");

@@ -24,13 +24,15 @@ export const ResultsView = ({ fileName }: ResultsViewProps) => {
   const [detectedWords, setDetectedWords] = useState<ExplicitWord[]>([]);
   const [transcript, setTranscript] = useState("");
   const [duration, setDuration] = useState(180);
-  const intervalRef = useRef<NodeJS.Timeout>();
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const PREVIEW_LIMIT = 30; // 30 seconds
 
-  // Load real analysis data
+  // Load real analysis data and audio
   useEffect(() => {
     const analysisData = sessionStorage.getItem('audioAnalysis');
+    const audioUrl = sessionStorage.getItem('audioUrl');
+    
     if (analysisData) {
       try {
         const data = JSON.parse(analysisData);
@@ -50,39 +52,67 @@ export const ResultsView = ({ fileName }: ResultsViewProps) => {
         console.error("Error loading analysis:", error);
       }
     }
-  }, []);
 
-  useEffect(() => {
-    if (isPlaying) {
-      intervalRef.current = setInterval(() => {
-        setCurrentTime((prev) => {
-          const newTime = prev + 0.1;
-          if (newTime >= PREVIEW_LIMIT && !hasReachedLimit) {
-            setIsPlaying(false);
-            setHasReachedLimit(true);
-            setShowPaywall(true);
-            return PREVIEW_LIMIT;
-          }
-          if (newTime >= duration) {
-            setIsPlaying(false);
-            return duration;
-          }
-          return newTime;
-        });
-      }, 100);
-    } else {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+    // Initialize audio element
+    if (audioUrl && !audioRef.current) {
+      const audio = new Audio(audioUrl);
+      audio.addEventListener('loadedmetadata', () => {
+        console.log('Audio loaded, duration:', audio.duration);
+      });
+      audio.addEventListener('timeupdate', () => {
+        setCurrentTime(audio.currentTime);
+        
+        // Check if we've reached preview limit
+        if (audio.currentTime >= PREVIEW_LIMIT && !hasReachedLimit) {
+          audio.pause();
+          setIsPlaying(false);
+          setHasReachedLimit(true);
+          setShowPaywall(true);
+        }
+
+        // Check if any explicit words should be muted at current time
+        const shouldMute = detectedWords.some(word => 
+          audio.currentTime >= word.timestamp && 
+          audio.currentTime <= word.timestamp + 0.5 // Mute for 0.5 seconds
+        );
+        
+        audio.volume = shouldMute ? 0 : 1;
+      });
+      audio.addEventListener('ended', () => {
+        setIsPlaying(false);
+      });
+      audioRef.current = audio;
     }
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
     };
-  }, [isPlaying, hasReachedLimit]);
+  }, [detectedWords]);
+
+  // Handle play/pause with actual audio
+  useEffect(() => {
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.play().catch(err => {
+          console.error('Error playing audio:', err);
+          setIsPlaying(false);
+        });
+      } else {
+        audioRef.current.pause();
+      }
+    }
+  }, [isPlaying]);
 
   const togglePlayPause = () => {
     if (currentTime >= PREVIEW_LIMIT) {
       setShowPaywall(true);
-    } else {
+      return;
+    }
+    
+    if (audioRef.current) {
       setIsPlaying(!isPlaying);
     }
   };
