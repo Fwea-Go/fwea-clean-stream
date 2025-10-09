@@ -225,6 +225,7 @@ serve(async (req) => {
     const formData = new FormData();
     const blob = new Blob([bytes], { type: "audio/mpeg" });
     formData.append("audio_file", blob, "audio.mp3");
+    formData.append("word_timestamps", "true");  // CRITICAL: Request word-level timestamps
 
     // Retry logic for transient network errors
     const maxRetries = 3;
@@ -235,8 +236,8 @@ serve(async (req) => {
       console.log(`[ANALYZE-AUDIO] Calling self-hosted Whisper (attempt ${attempt}/${maxRetries})...`);
       
       try {
-        // ahmetoner/whisper-asr-webservice API endpoint
-        whisperResponse = await fetch(`${baseUrl}/asr?task=transcribe&output=json`, {
+        // ahmetoner/whisper-asr-webservice API endpoint with word timestamps
+        whisperResponse = await fetch(`${baseUrl}/asr?task=transcribe&output=json&word_timestamps=true`, {
           method: "POST",
           body: formData,
         });
