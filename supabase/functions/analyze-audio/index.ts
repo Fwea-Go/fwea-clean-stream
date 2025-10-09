@@ -40,31 +40,45 @@ serve(async (req) => {
     console.log("[ANALYZE-AUDIO] Starting analysis");
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("No authorization header");
+    if (!authHeader) {
+      console.error("[ANALYZE-AUDIO] No authorization header");
+      throw new Error("No authorization header");
+    }
 
     const token = authHeader.replace("Bearer ", "");
     const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
-    if (userError) throw userError;
+    if (userError) {
+      console.error("[ANALYZE-AUDIO] Auth error:", userError);
+      throw userError;
+    }
     
     const user = userData.user;
-    if (!user) throw new Error("User not authenticated");
+    if (!user) {
+      console.error("[ANALYZE-AUDIO] User not authenticated");
+      throw new Error("User not authenticated");
+    }
+
+    console.log("[ANALYZE-AUDIO] User authenticated:", user.id);
 
     const { audioBase64, fileName } = await req.json();
     if (!audioBase64 || !fileName) {
+      console.error("[ANALYZE-AUDIO] Missing data:", { hasAudio: !!audioBase64, hasFileName: !!fileName });
       throw new Error("Missing audio data or file name");
     }
 
-    console.log("[ANALYZE-AUDIO] Received file:", fileName);
+    console.log("[ANALYZE-AUDIO] Received file:", fileName, "Base64 length:", audioBase64.length);
 
     // Decode base64 audio
+    console.log("[ANALYZE-AUDIO] Decoding base64...");
     const binaryString = atob(audioBase64);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
+    console.log("[ANALYZE-AUDIO] Base64 decoded, bytes length:", bytes.length);
 
     // Transcribe audio using OpenAI Whisper
-    console.log("[ANALYZE-AUDIO] Transcribing with Whisper");
+    console.log("[ANALYZE-AUDIO] Preparing Whisper request");
     const formData = new FormData();
     const blob = new Blob([bytes], { type: "audio/mpeg" });
     formData.append("file", blob, "audio.mp3");
@@ -72,13 +86,22 @@ serve(async (req) => {
     formData.append("response_format", "verbose_json");
     formData.append("timestamp_granularities[]", "word");
 
+    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openaiApiKey) {
+      console.error("[ANALYZE-AUDIO] OPENAI_API_KEY not set");
+      throw new Error("OPENAI_API_KEY not configured");
+    }
+
+    console.log("[ANALYZE-AUDIO] Calling OpenAI Whisper API...");
     const whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+        "Authorization": `Bearer ${openaiApiKey}`,
       },
       body: formData,
     });
+
+    console.log("[ANALYZE-AUDIO] Whisper response status:", whisperResponse.status);
 
     if (!whisperResponse.ok) {
       const error = await whisperResponse.text();
@@ -87,7 +110,7 @@ serve(async (req) => {
     }
 
     const transcription = await whisperResponse.json();
-    console.log("[ANALYZE-AUDIO] Transcription complete");
+    console.log("[ANALYZE-AUDIO] Transcription complete, text length:", transcription.text?.length || 0);
 
     // Detect explicit words with timestamps
     const explicitWords: Array<{
@@ -99,6 +122,7 @@ serve(async (req) => {
     }> = [];
 
     if (transcription.words) {
+      console.log("[ANALYZE-AUDIO] Processing", transcription.words.length, "words");
       for (const wordData of transcription.words) {
         const word = wordData.word.toLowerCase().replace(/[.,!?]/g, "");
         
@@ -122,6 +146,7 @@ serve(async (req) => {
     console.log(`[ANALYZE-AUDIO] Found ${explicitWords.length} explicit words`);
 
     // Store analysis in database
+    console.log("[ANALYZE-AUDIO] Storing analysis in database");
     const { data: analysisData, error: insertError } = await supabaseClient
       .from("audio_analyses")
       .insert({
@@ -140,7 +165,7 @@ serve(async (req) => {
       throw insertError;
     }
 
-    console.log("[ANALYZE-AUDIO] Analysis saved to database");
+    console.log("[ANALYZE-AUDIO] Analysis saved to database with ID:", analysisData.id);
 
     return new Response(
       JSON.stringify({

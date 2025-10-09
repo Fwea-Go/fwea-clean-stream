@@ -25,6 +25,8 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
     const analyzeAudio = async () => {
       try {
+        console.log("[AnalysisProgress] Starting analysis for file:", audioFile.name, "Size:", audioFile.size);
+        
         // Convert file to base64
         const reader = new FileReader();
         reader.readAsDataURL(audioFile);
@@ -39,6 +41,8 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
           throw new Error("Failed to read audio file");
         }
 
+        console.log("[AnalysisProgress] File converted to base64, length:", base64Audio.length);
+
         setProgress(25);
         setStatus("Processing audio...");
 
@@ -48,44 +52,68 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
           throw new Error("You must be logged in to analyze audio");
         }
 
+        console.log("[AnalysisProgress] Auth session found, calling edge function");
+
         setProgress(50);
         setStatus("Transcribing audio with AI...");
 
-        // Call analyze-audio function
-        const { data, error } = await supabase.functions.invoke("analyze-audio", {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: {
-            audioBase64: base64Audio,
-            fileName: audioFile.name,
-          },
-        });
+        // Call analyze-audio function with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
 
-        if (error) {
-          console.error("Analysis error:", error);
-          throw new Error(error.message || "Failed to analyze audio");
+        try {
+          const { data, error } = await supabase.functions.invoke("analyze-audio", {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: {
+              audioBase64: base64Audio,
+              fileName: audioFile.name,
+            },
+          });
+
+          clearTimeout(timeoutId);
+
+          console.log("[AnalysisProgress] Edge function response:", { data, error });
+
+          if (error) {
+            console.error("[AnalysisProgress] Edge function error:", error);
+            throw new Error(error.message || "Failed to analyze audio");
+          }
+
+          if (!data || !data.success) {
+            console.error("[AnalysisProgress] Analysis unsuccessful:", data);
+            throw new Error(data?.error || "Analysis failed");
+          }
+
+          console.log("[AnalysisProgress] Analysis successful:", {
+            explicitWordsCount: data.explicitWords?.length,
+            language: data.language,
+            duration: data.duration
+          });
+
+          setProgress(75);
+          setStatus("Detecting explicit content...");
+
+          // Store the result for the ResultsView
+          sessionStorage.setItem('audioAnalysis', JSON.stringify(data));
+
+          setProgress(100);
+          setStatus("Analysis complete!");
+
+          setTimeout(() => {
+            onComplete();
+          }, 1000);
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+            throw new Error("Analysis timed out. Please try with a shorter audio file.");
+          }
+          throw fetchError;
         }
-
-        if (!data || !data.success) {
-          throw new Error(data?.error || "Analysis failed");
-        }
-
-        setProgress(75);
-        setStatus("Detecting explicit content...");
-
-        // Store the result for the ResultsView
-        sessionStorage.setItem('audioAnalysis', JSON.stringify(data));
-
-        setProgress(100);
-        setStatus("Analysis complete!");
-
-        setTimeout(() => {
-          onComplete();
-        }, 1000);
 
       } catch (error) {
-        console.error("Error analyzing audio:", error);
+        console.error("[AnalysisProgress] Error analyzing audio:", error);
         toast({
           title: "Analysis Error",
           description: error instanceof Error ? error.message : "Failed to analyze audio",
