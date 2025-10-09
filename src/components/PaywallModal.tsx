@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -6,7 +7,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Check, Crown, Zap } from "lucide-react";
+import { Check, Crown, Zap, Loader2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 
 interface PaywallModalProps {
   open: boolean;
@@ -14,6 +17,9 @@ interface PaywallModalProps {
 }
 
 export const PaywallModal = ({ open, onOpenChange }: PaywallModalProps) => {
+  const [loadingPayment, setLoadingPayment] = useState(false);
+  const [loadingSubscription, setLoadingSubscription] = useState(false);
+
   const features = [
     "Download full clean version",
     "Unlimited audio processing",
@@ -22,6 +28,78 @@ export const PaywallModal = ({ open, onOpenChange }: PaywallModalProps) => {
     "Batch processing support",
     "Commercial use license",
   ];
+
+  const handleSinglePurchase = async () => {
+    setLoadingPayment(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({
+          title: "Authentication Required",
+          description: "Please sign in to purchase",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("create-payment", {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.url) {
+        window.open(data.url, "_blank");
+      }
+    } catch (error) {
+      console.error("Payment error:", error);
+      toast({
+        title: "Payment Error",
+        description: "Failed to create payment session. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingPayment(false);
+    }
+  };
+
+  const handleSubscription = async () => {
+    setLoadingSubscription(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({
+          title: "Authentication Required",
+          description: "Please sign in to subscribe",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("create-subscription", {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.url) {
+        window.open(data.url, "_blank");
+      }
+    } catch (error) {
+      console.error("Subscription error:", error);
+      toast({
+        title: "Subscription Error",
+        description: "Failed to create subscription. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingSubscription(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -51,8 +129,19 @@ export const PaywallModal = ({ open, onOpenChange }: PaywallModalProps) => {
                 <div className="text-3xl font-bold mb-2">$9.99</div>
                 <div className="text-muted-foreground">Single Track</div>
               </div>
-              <Button className="w-full bg-gradient-to-r from-primary to-accent hover:opacity-90">
-                Purchase Now
+              <Button 
+                className="w-full bg-gradient-to-r from-primary to-accent hover:opacity-90"
+                onClick={handleSinglePurchase}
+                disabled={loadingPayment}
+              >
+                {loadingPayment ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  "Purchase Now"
+                )}
               </Button>
             </div>
 
@@ -67,8 +156,19 @@ export const PaywallModal = ({ open, onOpenChange }: PaywallModalProps) => {
                 <div className="text-3xl font-bold mb-2">$29.99</div>
                 <div className="text-muted-foreground">Monthly Unlimited</div>
               </div>
-              <Button className="w-full bg-gradient-to-r from-secondary to-accent hover:opacity-90">
-                Subscribe Now
+              <Button 
+                className="w-full bg-gradient-to-r from-secondary to-accent hover:opacity-90"
+                onClick={handleSubscription}
+                disabled={loadingSubscription}
+              >
+                {loadingSubscription ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  "Subscribe Now"
+                )}
               </Button>
             </div>
           </div>
