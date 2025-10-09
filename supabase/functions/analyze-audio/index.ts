@@ -97,8 +97,8 @@ DO NOT MISS COMMON WORDS LIKE "BITCH" - this is critical for content safety.`
 
     // Double-check with basic detection to catch any missed common words
     const basicWords = basicDetection(words);
-    const basicWordsNotInAI = basicWords.filter(bw => 
-      !explicitWords.some(ew => ew.word === bw.word && Math.abs(ew.start - bw.start) < 0.1)
+    const basicWordsNotInAI = basicWords.filter((bw: any) => 
+      !explicitWords.some((ew: any) => ew.word === bw.word && Math.abs(ew.start - bw.start) < 0.1)
     );
     
     if (basicWordsNotInAI.length > 0) {
@@ -118,9 +118,9 @@ DO NOT MISS COMMON WORDS LIKE "BITCH" - this is critical for content safety.`
 function basicDetection(words: any[]) {
   const EXPLICIT_WORDS = [
     // English
-    "fuck", "fucking", "fucked", "fucker", "fck", "fuk", "shit", "shit", "damn", "bitch", "bitches", 
+    "fuck", "fucking", "fucked", "fucker", "fck", "fuk", "shit", "damn", "bitch", "bitches", 
     "ass", "asshole", "bastard", "hell", "crap", "dick", "cock", "pussy", "piss", "cunt", 
-    "motherfucker", "bullshit", "nigga", "nigger", "whore", "slut",
+    "motherfucker", "bullshit", "nigga", "nigger", "whore", "slut", "hoe",
     // Spanish
     "mierda", "puta", "puto", "carajo", "coño", "joder", "pendejo", "chinga", "verga", "perra",
     // French
