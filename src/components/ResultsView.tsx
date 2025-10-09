@@ -47,8 +47,8 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
         // Map the analysis data to our format
         const words: ExplicitWord[] = data.explicitWords?.map((w: any) => ({
           word: w.word,
-          timestamp: w.start || 0,
-          end: w.end || (w.start + 0.3) || 0, // Use actual end time or estimate 0.3s duration
+          timestamp: Math.max(0, (w.start || 0) - 0.1), // Start muting 0.1s early for buffer
+          end: (w.end || (w.start + 0.8)) + 0.2, // Mute for at least 0.8s + 0.2s buffer after
           language: w.language || data.language || "unknown",
           confidence: w.confidence || 0.95,
         })) || [];
