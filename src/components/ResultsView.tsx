@@ -4,6 +4,7 @@ import { Play, Pause, Download, AlertCircle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { PaywallModal } from "./PaywallModal";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface ExplicitWord {
   word: string;
@@ -28,8 +29,9 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   const [isDemo, setIsDemo] = useState(false);
   const vocalsRef = useRef<HTMLAudioElement | null>(null);
   const instrumentalRef = useRef<HTMLAudioElement | null>(null);
+  const { isAdmin } = useAuth();
 
-  const PREVIEW_LIMIT = 30; // 30 seconds free preview
+  const PREVIEW_LIMIT = isAdmin ? Infinity : 30; // Admins get unlimited preview
 
   // Load real analysis data
   useEffect(() => {
@@ -207,6 +209,34 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const handleDownload = async () => {
+    if (isAdmin) {
+      // Admin users can download directly
+      const vocalsUrl = sessionStorage.getItem('vocalsUrl');
+      const instrumentalUrl = sessionStorage.getItem('instrumentalUrl');
+      
+      if (vocalsUrl) {
+        const link = document.createElement('a');
+        link.href = vocalsUrl;
+        link.download = `${fileName}_clean_vocals.mp3`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+      
+      if (instrumentalUrl) {
+        const link = document.createElement('a');
+        link.href = instrumentalUrl;
+        link.download = `${fileName}_instrumental.mp3`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } else {
+      setShowPaywall(true);
+    }
+  };
+
   const progressPercentage = (currentTime / PREVIEW_LIMIT) * 100;
 
   return (
@@ -266,9 +296,15 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
         <div className="glass-card rounded-2xl p-8 neon-border">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-2xl font-bold">Clean Version Preview</h3>
-            <Badge variant="outline" className="border-primary text-primary">
-              30s Free Preview
-            </Badge>
+            {isAdmin ? (
+              <Badge variant="outline" className="border-accent text-accent">
+                Admin Access
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="border-primary text-primary">
+                30s Free Preview
+              </Badge>
+            )}
           </div>
 
           {/* Waveform visualization mockup */}
@@ -327,16 +363,16 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
               </Button>
               <Button
                 size="lg"
-                onClick={() => setShowPaywall(true)}
+                onClick={handleDownload}
                 disabled={isDemo}
                 className="bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Download className="h-5 w-5 mr-2" />
-                Download Full Version
+                {isAdmin ? "Download Full Version" : "Download Full Version"}
               </Button>
             </div>
 
-            {currentTime >= PREVIEW_LIMIT && (
+            {currentTime >= PREVIEW_LIMIT && !isAdmin && (
             <div className="flex items-center gap-2 justify-center text-accent text-sm animate-fade-in">
               <AlertCircle className="h-4 w-4" />
               <span>30s preview complete. Click play to listen again or upgrade to download the full version.</span>
