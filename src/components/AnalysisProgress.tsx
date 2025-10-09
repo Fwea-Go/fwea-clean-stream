@@ -44,8 +44,13 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         setProgress(5);
         setStatus("Uploading audio file...");
 
+        // Sanitize filename to remove special characters that can cause storage issues
+        const sanitizedFileName = audioFile.name
+          .replace(/[^\w\s.-]/g, '') // Remove special chars except spaces, dots, dashes
+          .replace(/\s+/g, '_'); // Replace spaces with underscores
+
         // Upload file directly to storage
-        const storagePath = `${session.user.id}/uploads/${Date.now()}-${audioFile.name}`;
+        const storagePath = `${session.user.id}/uploads/${Date.now()}-${sanitizedFileName}`;
         const { error: uploadError } = await supabase.storage
           .from("audio-files")
           .upload(storagePath, audioFile, {
