@@ -207,44 +207,35 @@ serve(async (req) => {
     const bytes = new Uint8Array(await audioData.arrayBuffer());
     console.log("[ANALYZE-AUDIO] File downloaded, bytes length:", bytes.length);
 
-    // Check file size (OpenAI Whisper has a 25MB limit)
     const fileSizeMB = bytes.length / (1024 * 1024);
     console.log("[ANALYZE-AUDIO] File size:", fileSizeMB.toFixed(2), "MB");
 
-    // Warn if file is large, but try anyway
-    if (fileSizeMB > 24) {
-      console.warn("[ANALYZE-AUDIO] File is large (", fileSizeMB.toFixed(2), "MB) - Whisper may reject it");
+    // Using self-hosted Whisper - no file size limits!
+    const whisperApiUrl = Deno.env.get("WHISPER_API_URL");
+    if (!whisperApiUrl) {
+      console.error("[ANALYZE-AUDIO] WHISPER_API_URL not set");
+      throw new Error("WHISPER_API_URL not configured");
     }
 
-    // Transcribe audio using OpenAI Whisper with retry logic
-    console.log("[ANALYZE-AUDIO] Preparing Whisper request");
+    console.log("[ANALYZE-AUDIO] Using self-hosted Whisper at:", whisperApiUrl);
+
+    // Prepare request for ahmetoner/whisper-asr-webservice
     const formData = new FormData();
     const blob = new Blob([bytes], { type: "audio/mpeg" });
-    formData.append("file", blob, "audio.mp3");
-    formData.append("model", "whisper-1");
-    formData.append("response_format", "verbose_json");
-    formData.append("timestamp_granularities[]", "word");
+    formData.append("audio_file", blob, "audio.mp3");
 
-    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!openaiApiKey) {
-      console.error("[ANALYZE-AUDIO] OPENAI_API_KEY not set");
-      throw new Error("OPENAI_API_KEY not configured");
-    }
-
-    // Retry logic for transient errors
+    // Retry logic for transient network errors
     const maxRetries = 3;
     let whisperResponse;
     let lastError;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      console.log(`[ANALYZE-AUDIO] Calling OpenAI Whisper API (attempt ${attempt}/${maxRetries})...`);
+      console.log(`[ANALYZE-AUDIO] Calling self-hosted Whisper (attempt ${attempt}/${maxRetries})...`);
       
       try {
-        whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        // ahmetoner/whisper-asr-webservice API endpoint
+        whisperResponse = await fetch(`${whisperApiUrl}/asr?task=transcribe&output=json`, {
           method: "POST",
-          headers: {
-            "Authorization": `Bearer ${openaiApiKey}`,
-          },
           body: formData,
         });
 
@@ -256,38 +247,28 @@ serve(async (req) => {
 
         const errorText = await whisperResponse.text();
         console.error(`[ANALYZE-AUDIO] Whisper error (attempt ${attempt}):`, errorText);
-        
-        // Parse error to check if it's retryable
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { error: { message: errorText } };
-        }
 
-        const errorMessage = errorData.error?.message || errorText;
-        
-        // Check for file size error
-        if (errorMessage.includes('file') && (errorMessage.includes('large') || errorMessage.includes('size') || errorMessage.includes('25') || errorMessage.includes('MB'))) {
-          throw new Error("The separated vocals are too large for OpenAI Whisper (25MB limit). Try using a shorter audio file (under 3 minutes), or consider setting up your own Whisper instance on your Hetzner server for larger files.");
-        }
-
-        // Retry on 500 server errors, don't retry on client errors (4xx)
+        // Retry on 500 server errors or network issues
         if (whisperResponse.status >= 500 && attempt < maxRetries) {
           const waitTime = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s
           console.log(`[ANALYZE-AUDIO] Retrying in ${waitTime}ms...`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
-          lastError = errorMessage;
+          lastError = errorText;
           continue;
         }
 
         // Don't retry on client errors or last attempt
-        throw new Error(errorMessage);
+        throw new Error(errorText);
       } catch (error) {
         if (attempt === maxRetries) {
-          throw new Error(`Whisper API failed after ${maxRetries} attempts: ${error instanceof Error ? error.message : String(error)}`);
+          throw new Error(`Self-hosted Whisper failed after ${maxRetries} attempts: ${error instanceof Error ? error.message : String(error)}`);
         }
         lastError = error instanceof Error ? error.message : String(error);
+        
+        // Wait before retry
+        const waitTime = Math.pow(2, attempt) * 1000;
+        console.log(`[ANALYZE-AUDIO] Network error, retrying in ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
       }
     }
 
@@ -295,8 +276,25 @@ serve(async (req) => {
       throw new Error(`Whisper API error: ${lastError || "Unknown error"}`);
     }
 
-    const transcription = await whisperResponse.json();
-    console.log("[ANALYZE-AUDIO] Transcription complete, text length:", transcription.text?.length || 0);
+    const rawTranscription = await whisperResponse.json();
+    console.log("[ANALYZE-AUDIO] Raw response:", JSON.stringify(rawTranscription).substring(0, 200));
+
+    // Parse ahmetoner/whisper-asr-webservice response format
+    const transcription = {
+      text: rawTranscription.text || "",
+      language: rawTranscription.language || "unknown",
+      duration: rawTranscription.duration || 0,
+      words: rawTranscription.segments?.flatMap((segment: any) => 
+        segment.words?.map((w: any) => ({
+          word: w.word || w.text || "",
+          start: w.start || 0,
+          end: w.end || 0,
+        })) || []
+      ) || []
+    };
+
+    console.log("[ANALYZE-AUDIO] Transcription complete, text length:", transcription.text.length);
+    console.log("[ANALYZE-AUDIO] Words found:", transcription.words.length);
 
     // Detect explicit words using AI-enhanced detection
     let explicitWords: Array<{
