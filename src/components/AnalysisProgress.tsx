@@ -27,6 +27,12 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
       try {
         console.log("[AnalysisProgress] Starting analysis for file:", audioFile.name, "Size:", audioFile.size);
         
+        // Clear any previous demo or analysis data
+        sessionStorage.removeItem('isDemo');
+        sessionStorage.removeItem('audioAnalysis');
+        sessionStorage.removeItem('vocalsUrl');
+        sessionStorage.removeItem('instrumentalUrl');
+        
         // Get auth session
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
