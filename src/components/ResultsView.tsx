@@ -46,11 +46,15 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
       try {
         const data = JSON.parse(analysisData);
         
-        // Map the analysis data to our format
+        // Map the analysis data to our format with buffer zones
+        // Start muting 0.15s before and end 0.25s after to ensure we catch everything
+        const MUTE_BUFFER_START = 0.15;
+        const MUTE_BUFFER_END = 0.25;
+        
         const words: ExplicitWord[] = data.explicitWords?.map((w: any) => ({
           word: w.word,
-          timestamp: w.start || 0,
-          end: w.end || (w.start + 0.4) || 0, // Mute for 0.4s
+          timestamp: Math.max(0, (w.start || 0) - MUTE_BUFFER_START), // Start earlier
+          end: (w.end || (w.start + 0.5) || 0) + MUTE_BUFFER_END, // End later
           language: w.language || data.language || "unknown",
           confidence: w.confidence || 0.95,
         })) || [];
@@ -102,8 +106,8 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
       instrumentalAudio.addEventListener('timeupdate', () => {
         setCurrentTime(instrumentalAudio.currentTime);
         
-        // Sync vocals to same time
-        if (vocalsAudio && Math.abs(vocalsAudio.currentTime - instrumentalAudio.currentTime) > 0.1) {
+        // Tighter sync tolerance - sync if off by more than 0.05s
+        if (vocalsAudio && Math.abs(vocalsAudio.currentTime - instrumentalAudio.currentTime) > 0.05) {
           vocalsAudio.currentTime = instrumentalAudio.currentTime;
         }
         
@@ -146,16 +150,20 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   // Handle muting vocals during explicit words (instrumental keeps playing)
   useEffect(() => {
     if (vocalsRef.current && detectedWords.length > 0) {
-      // Check if we're currently on an explicit word
+      // Check if we're currently on an explicit word (with buffer)
       const currentWord = detectedWords.find(word => {
         return currentTime >= word.timestamp && currentTime <= word.end;
       });
       
-      // Mute vocals during explicit words, unmute otherwise
-      vocalsRef.current.volume = currentWord ? 0 : 1;
+      // Smoothly mute/unmute vocals
+      const targetVolume = currentWord ? 0 : 1;
       
-      if (currentWord && vocalsRef.current.volume === 0) {
-        console.log('[ResultsView] Muting vocals:', currentWord.word, 'at', currentTime.toFixed(2));
+      if (vocalsRef.current.volume !== targetVolume) {
+        vocalsRef.current.volume = targetVolume;
+        
+        if (targetVolume === 0) {
+          console.log('[ResultsView] Muting vocals:', currentWord!.word, 'at', currentTime.toFixed(2));
+        }
       }
     }
   }, [currentTime, detectedWords]);
