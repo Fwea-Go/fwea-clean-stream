@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      audio_analyses: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          explicit_words: Json | null
+          file_name: string
+          id: string
+          status: string
+          storage_path: string
+          transcript: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          explicit_words?: Json | null
+          file_name: string
+          id?: string
+          status?: string
+          storage_path: string
+          transcript?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          explicit_words?: Json | null
+          file_name?: string
+          id?: string
+          status?: string
+          storage_path?: string
+          transcript?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_purchases: {
         Row: {
           amount: number
