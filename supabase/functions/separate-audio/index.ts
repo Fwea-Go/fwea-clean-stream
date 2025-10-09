@@ -86,14 +86,23 @@ serve(async (req) => {
     console.log("[SEPARATE-AUDIO] Starting Spleeter separation...");
     
     // Use Spleeter for fast, high-quality source separation
-    const output = await replicate.run(
-      "soykertje/spleeter:cd128044253523c86abfd743dea680c88559ad975ccd72378c8433f067ab5d0a",
-      {
-        input: {
-          audio: urlData.publicUrl,
+    let output: any;
+    try {
+      output = await replicate.run(
+        "soykertje/spleeter:cd128044253523c86abfd743dea680c88559ad975ccd72378c8433f067ab5d0a",
+        {
+          input: {
+            audio: urlData.publicUrl,
+          }
         }
+      ) as any;
+    } catch (replicateError: any) {
+      console.error("[SEPARATE-AUDIO] Replicate API error:", replicateError);
+      if (replicateError.response?.status === 402) {
+        throw new Error("Replicate API requires payment. Please add credits at https://replicate.com/account/billing");
       }
-    ) as any;
+      throw new Error(`Replicate API error: ${replicateError.message || 'Unknown error'}`);
+    }
 
     console.log("[SEPARATE-AUDIO] Separation complete:", output);
 
