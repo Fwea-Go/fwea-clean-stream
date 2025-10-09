@@ -27,7 +27,9 @@ const Index = () => {
     <main className="min-h-screen">
       {appState === "hero" && <Hero onGetStarted={handleGetStarted} />}
       {appState === "upload" && <UploadZone onFileUpload={handleFileUpload} />}
-      {appState === "analyzing" && <AnalysisProgress onComplete={handleAnalysisComplete} />}
+      {appState === "analyzing" && uploadedFile && (
+        <AnalysisProgress onComplete={handleAnalysisComplete} audioFile={uploadedFile} />
+      )}
       {appState === "results" && uploadedFile && <ResultsView fileName={uploadedFile.name} />}
     </main>
   );

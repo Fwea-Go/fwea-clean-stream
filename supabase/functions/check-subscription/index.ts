@@ -69,13 +69,12 @@ serve(async (req) => {
       console.log("[CHECK-SUBSCRIPTION] Active subscription found, ends:", subscriptionEnd);
     }
 
-    // Check for successful one-time payments
     const payments = await stripe.paymentIntents.list({
       customer: customerId,
       limit: 10,
     });
 
-    const successfulPayments = payments.data.filter(p => p.status === "succeeded");
+    const successfulPayments = payments.data.filter((p: any) => p.status === "succeeded");
     const hasPurchase = successfulPayments.length > 0;
 
     console.log("[CHECK-SUBSCRIPTION] Successful payments found:", successfulPayments.length);

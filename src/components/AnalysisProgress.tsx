@@ -1,48 +1,107 @@
 import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 import { Loader2, CheckCircle2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
 interface AnalysisProgressProps {
   onComplete: () => void;
+  audioFile: File | null;
 }
 
-export const AnalysisProgress = ({ onComplete }: AnalysisProgressProps) => {
+export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProps) => {
   const [progress, setProgress] = useState(0);
-  const [currentStep, setCurrentStep] = useState(0);
-
-  const steps = [
-    "Loading audio file...",
-    "Analyzing waveform patterns...",
-    "Detecting explicit content...",
-    "Processing omnilingual detection...",
-    "Generating clean version...",
-    "Finalizing results...",
-  ];
+  const [status, setStatus] = useState("Uploading audio file...");
 
   useEffect(() => {
-    const totalDuration = 5000; // 5 seconds
-    const stepDuration = totalDuration / steps.length;
-    const progressInterval = 50;
-    const progressIncrement = (100 / totalDuration) * progressInterval;
-
-    const timer = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(timer);
-          setTimeout(onComplete, 500);
-          return 100;
-        }
-        return Math.min(prev + progressIncrement, 100);
+    if (!audioFile) {
+      toast({
+        title: "Error",
+        description: "No audio file provided",
+        variant: "destructive",
       });
-    }, progressInterval);
+      return;
+    }
 
-    return () => clearInterval(timer);
-  }, [onComplete, steps.length]);
+    const analyzeAudio = async () => {
+      try {
+        // Convert file to base64
+        const reader = new FileReader();
+        reader.readAsDataURL(audioFile);
+        
+        await new Promise((resolve) => {
+          reader.onloadend = resolve;
+        });
 
-  useEffect(() => {
-    const stepIndex = Math.floor((progress / 100) * steps.length);
-    setCurrentStep(Math.min(stepIndex, steps.length - 1));
-  }, [progress, steps.length]);
+        const base64Audio = reader.result?.toString().split(',')[1];
+        
+        if (!base64Audio) {
+          throw new Error("Failed to read audio file");
+        }
+
+        setProgress(25);
+        setStatus("Processing audio...");
+
+        // Get auth session
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          throw new Error("You must be logged in to analyze audio");
+        }
+
+        setProgress(50);
+        setStatus("Transcribing audio with AI...");
+
+        // Call analyze-audio function
+        const { data, error } = await supabase.functions.invoke("analyze-audio", {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: {
+            audioBase64: base64Audio,
+            fileName: audioFile.name,
+          },
+        });
+
+        if (error) {
+          console.error("Analysis error:", error);
+          throw new Error(error.message || "Failed to analyze audio");
+        }
+
+        if (!data || !data.success) {
+          throw new Error(data?.error || "Analysis failed");
+        }
+
+        setProgress(75);
+        setStatus("Detecting explicit content...");
+
+        // Store the result for the ResultsView
+        sessionStorage.setItem('audioAnalysis', JSON.stringify(data));
+
+        setProgress(100);
+        setStatus("Analysis complete!");
+
+        setTimeout(() => {
+          onComplete();
+        }, 1000);
+
+      } catch (error) {
+        console.error("Error analyzing audio:", error);
+        toast({
+          title: "Analysis Error",
+          description: error instanceof Error ? error.message : "Failed to analyze audio",
+          variant: "destructive",
+        });
+        setStatus("Analysis failed. Please try again.");
+      }
+    };
+
+    // Start analysis after brief delay
+    const timer = setTimeout(() => {
+      analyzeAudio();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [audioFile, onComplete]);
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-20">
@@ -51,9 +110,7 @@ export const AnalysisProgress = ({ onComplete }: AnalysisProgressProps) => {
           <h2 className="text-3xl font-bold mb-3">
             Analyzing Your <span className="text-primary neon-text">Audio</span>
           </h2>
-          <p className="text-muted-foreground">
-            AI is detecting explicit content across all languages
-          </p>
+          <p className="text-muted-foreground">{status}</p>
         </div>
 
         <div className="relative mb-8">
@@ -72,29 +129,10 @@ export const AnalysisProgress = ({ onComplete }: AnalysisProgressProps) => {
 
         <Progress value={progress} className="mb-8 h-2" />
 
-        <div className="space-y-3">
-          {steps.map((step, index) => (
-            <div
-              key={index}
-              className={`
-                flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300
-                ${
-                  index < currentStep
-                    ? "bg-primary/20 text-foreground"
-                    : index === currentStep
-                    ? "bg-primary/30 text-foreground neon-border"
-                    : "bg-muted/20 text-muted-foreground"
-                }
-              `}
-            >
-              {index < currentStep ? (
-                <CheckCircle2 className="h-5 w-5 text-primary" />
-              ) : (
-                <div className="h-5 w-5 rounded-full border-2 border-current" />
-              )}
-              <span className="font-medium">{step}</span>
-            </div>
-          ))}
+        <div className="space-y-3 text-center">
+          <p className="text-sm text-muted-foreground">
+            Using AI to transcribe and detect explicit content in all languages
+          </p>
         </div>
       </div>
     </div>
