@@ -82,6 +82,15 @@ serve(async (req) => {
     const bytes = new Uint8Array(await audioData.arrayBuffer());
     console.log("[ANALYZE-AUDIO] File downloaded, bytes length:", bytes.length);
 
+    // Check file size (OpenAI Whisper has a 25MB limit)
+    const fileSizeMB = bytes.length / (1024 * 1024);
+    console.log("[ANALYZE-AUDIO] File size:", fileSizeMB.toFixed(2), "MB");
+
+    if (fileSizeMB > 24) {
+      console.error("[ANALYZE-AUDIO] File too large for Whisper API");
+      throw new Error(`Audio file is too large (${fileSizeMB.toFixed(1)}MB). OpenAI Whisper supports files up to 25MB. Please try a shorter audio file.`);
+    }
+
     // Transcribe audio using OpenAI Whisper with retry logic
     console.log("[ANALYZE-AUDIO] Preparing Whisper request");
     const formData = new FormData();

@@ -92,19 +92,31 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         if (error) {
           console.error("[AnalysisProgress] Analysis error:", error);
           const errorMsg = error.message || "Failed to analyze audio";
+          
           // Check for specific error types
           if (errorMsg.includes("Whisper API failed after")) {
-            throw new Error("OpenAI service is temporarily unavailable. Please try again in a few moments.");
+            throw new Error("OpenAI Whisper is temporarily unavailable. This is an OpenAI server issue - please try again in a few moments.");
           }
+          
+          if (errorMsg.includes("too large")) {
+            throw new Error(errorMsg + " Try using a shorter audio clip (under 3 minutes recommended).");
+          }
+          
           throw new Error(errorMsg);
         }
 
         if (!data || !data.success) {
           console.error("[AnalysisProgress] Analysis unsuccessful:", data);
           const errorMsg = data?.error || "Analysis failed";
+          
           if (errorMsg.includes("Whisper API") || errorMsg.includes("server_error")) {
-            throw new Error("AI analysis service is temporarily unavailable. Please try again in a few moments.");
+            throw new Error("OpenAI Whisper is temporarily unavailable. This is an OpenAI server issue - please try again in a few moments.");
           }
+          
+          if (errorMsg.includes("too large")) {
+            throw new Error(errorMsg + " Try using a shorter audio clip (under 3 minutes recommended).");
+          }
+          
           throw new Error(errorMsg);
         }
 

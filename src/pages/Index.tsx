@@ -4,12 +4,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Hero } from "@/components/Hero";
 import { UploadZone } from "@/components/UploadZone";
 import { AnalysisProgress } from "@/components/AnalysisProgress";
+import { DemoProgress } from "@/components/DemoProgress";
 import { ResultsView } from "@/components/ResultsView";
 import { LanguageBanner } from "@/components/LanguageBanner";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 
-type AppState = "hero" | "upload" | "analyzing" | "results";
+type AppState = "hero" | "upload" | "analyzing" | "demo" | "results";
 
 const Index = () => {
   const [appState, setAppState] = useState<AppState>("hero");
@@ -31,6 +32,18 @@ const Index = () => {
       return;
     }
     setAppState("upload");
+  };
+
+  const handleShowDemo = () => {
+    sessionStorage.removeItem('audioAnalysis');
+    sessionStorage.removeItem('vocalsUrl');
+    sessionStorage.removeItem('instrumentalUrl');
+    sessionStorage.removeItem('isDemo');
+    setAppState("demo");
+  };
+
+  const handleDemoComplete = () => {
+    setAppState("results");
   };
 
   const handleFileUpload = (file: File) => {
@@ -82,13 +95,17 @@ const Index = () => {
         </div>
       )}
       
-      {appState === "hero" && <Hero onGetStarted={handleGetStarted} />}
+      {appState === "hero" && <Hero onGetStarted={handleGetStarted} onShowDemo={handleShowDemo} />}
       {appState === "upload" && <UploadZone onFileUpload={handleFileUpload} />}
       {appState === "analyzing" && uploadedFile && (
         <AnalysisProgress onComplete={handleAnalysisComplete} audioFile={uploadedFile} />
       )}
-      {appState === "results" && uploadedFile && (
-        <ResultsView fileName={uploadedFile.name} onAnalyzeAnother={handleAnalyzeAnother} />
+      {appState === "demo" && <DemoProgress onComplete={handleDemoComplete} />}
+      {appState === "results" && (
+        <ResultsView 
+          fileName={uploadedFile?.name || "Demo Song"} 
+          onAnalyzeAnother={handleAnalyzeAnother} 
+        />
       )}
       
       <LanguageBanner />

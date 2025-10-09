@@ -80,6 +80,8 @@ serve(async (req) => {
         {
           input: {
             audio: urlData.publicUrl,
+            // Request MP3 format to reduce file size for downstream processing
+            audio_format: "mp3"
           }
         }
       ) as any;

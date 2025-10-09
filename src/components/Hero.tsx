@@ -3,9 +3,10 @@ import { Upload } from "lucide-react";
 
 interface HeroProps {
   onGetStarted: () => void;
+  onShowDemo: () => void;
 }
 
-export const Hero = ({ onGetStarted }: HeroProps) => {
+export const Hero = ({ onGetStarted, onShowDemo }: HeroProps) => {
   return (
     <section className="relative min-h-screen flex items-center justify-center px-4 overflow-hidden">
       {/* Animated background effects */}
@@ -47,6 +48,7 @@ export const Hero = ({ onGetStarted }: HeroProps) => {
           <Button
             size="lg"
             variant="outline"
+            onClick={onShowDemo}
             className="px-8 py-6 text-lg font-semibold border-2 border-primary/50 hover:border-primary hover:bg-primary/10 transition-all duration-300"
           >
             See How It Works

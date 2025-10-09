@@ -26,6 +26,7 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   const [detectedWords, setDetectedWords] = useState<ExplicitWord[]>([]);
   const [transcript, setTranscript] = useState("");
   const [duration, setDuration] = useState(180);
+  const [isDemo, setIsDemo] = useState(false);
   const vocalsRef = useRef<HTMLAudioElement | null>(null);
   const instrumentalRef = useRef<HTMLAudioElement | null>(null);
 
@@ -34,6 +35,11 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   // Load real analysis data
   useEffect(() => {
     const analysisData = sessionStorage.getItem('audioAnalysis');
+    const demoMode = sessionStorage.getItem('isDemo');
+    
+    if (demoMode === 'true') {
+      setIsDemo(true);
+    }
     
     if (analysisData) {
       try {
@@ -63,6 +69,12 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
     const instrumentalUrl = sessionStorage.getItem('instrumentalUrl');
     
     console.log('[ResultsView] Loading separated stems:', { vocalsUrl, instrumentalUrl });
+    
+    // Skip audio loading in demo mode
+    if (isDemo) {
+      console.log('[ResultsView] Demo mode - skipping audio initialization');
+      return;
+    }
     
     if (vocalsUrl && instrumentalUrl && !vocalsRef.current && !instrumentalRef.current) {
       // Initialize vocals audio
@@ -202,16 +214,28 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
       <div className="animate-slide-up space-y-8">
         {/* Header */}
         <div className="text-center mb-8">
-          <h2 className="text-4xl font-bold mb-3">
-            Analysis <span className="text-primary neon-text">Complete</span>
-          </h2>
+          <div className="flex items-center justify-center gap-3 mb-3">
+            <h2 className="text-4xl font-bold">
+              Analysis <span className="text-primary neon-text">Complete</span>
+            </h2>
+            {isDemo && (
+              <Badge variant="outline" className="text-accent border-accent">
+                DEMO
+              </Badge>
+            )}
+          </div>
           <p className="text-muted-foreground text-lg mb-4">{fileName}</p>
+          {isDemo && (
+            <p className="text-sm text-muted-foreground mb-4 italic">
+              This is a demo showing example results. Upload your own audio to analyze!
+            </p>
+          )}
           <Button
             variant="outline"
             onClick={onAnalyzeAnother}
             className="border-primary text-primary hover:bg-primary/10"
           >
-            Clean Another Song
+            {isDemo ? "Try With Your Own Audio" : "Clean Another Song"}
           </Button>
         </div>
 
@@ -291,19 +315,21 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
               <Button
                 size="lg"
                 onClick={togglePlayPause}
-                className="bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-all duration-300 glow-hover"
+                disabled={isDemo}
+                className="bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-all duration-300 glow-hover disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isPlaying ? (
                   <Pause className="h-5 w-5 mr-2" />
                 ) : (
                   <Play className="h-5 w-5 mr-2" />
                 )}
-                {currentTime >= PREVIEW_LIMIT ? "Preview Ended" : isPlaying ? "Pause" : "Play Preview"}
+                {isDemo ? "Demo Mode - No Audio" : currentTime >= PREVIEW_LIMIT ? "Preview Ended" : isPlaying ? "Pause" : "Play Preview"}
               </Button>
               <Button
                 size="lg"
                 onClick={() => setShowPaywall(true)}
-                className="bg-secondary hover:bg-secondary/90"
+                disabled={isDemo}
+                className="bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Download className="h-5 w-5 mr-2" />
                 Download Full Version
