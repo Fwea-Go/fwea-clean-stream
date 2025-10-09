@@ -21,19 +21,36 @@ export const ResultsView = ({ fileName }: ResultsViewProps) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [showPaywall, setShowPaywall] = useState(false);
   const [hasReachedLimit, setHasReachedLimit] = useState(false);
+  const [detectedWords, setDetectedWords] = useState<ExplicitWord[]>([]);
+  const [transcript, setTranscript] = useState("");
+  const [duration, setDuration] = useState(180);
   const intervalRef = useRef<NodeJS.Timeout>();
 
   const PREVIEW_LIMIT = 30; // 30 seconds
-  const TOTAL_DURATION = 180; // 3 minutes mock duration
 
-  // Mock detected explicit words
-  const detectedWords: ExplicitWord[] = [
-    { word: "f***", timestamp: 12.5, language: "English", confidence: 0.98 },
-    { word: "s***", timestamp: 45.2, language: "English", confidence: 0.95 },
-    { word: "m*****", timestamp: 78.8, language: "Spanish", confidence: 0.97 },
-    { word: "b****", timestamp: 102.3, language: "English", confidence: 0.94 },
-    { word: "d***", timestamp: 156.7, language: "French", confidence: 0.96 },
-  ];
+  // Load real analysis data
+  useEffect(() => {
+    const analysisData = sessionStorage.getItem('audioAnalysis');
+    if (analysisData) {
+      try {
+        const data = JSON.parse(analysisData);
+        
+        // Map the analysis data to our format
+        const words: ExplicitWord[] = data.explicitWords?.map((w: any) => ({
+          word: w.word,
+          timestamp: w.start || 0,
+          language: w.language || data.language || "unknown",
+          confidence: w.confidence || 0.9,
+        })) || [];
+        
+        setDetectedWords(words);
+        setTranscript(data.transcript || "");
+        setDuration(data.duration || 180);
+      } catch (error) {
+        console.error("Error loading analysis:", error);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (isPlaying) {
@@ -45,6 +62,10 @@ export const ResultsView = ({ fileName }: ResultsViewProps) => {
             setHasReachedLimit(true);
             setShowPaywall(true);
             return PREVIEW_LIMIT;
+          }
+          if (newTime >= duration) {
+            setIsPlaying(false);
+            return duration;
           }
           return newTime;
         });
@@ -92,11 +113,18 @@ export const ResultsView = ({ fileName }: ResultsViewProps) => {
             <div className="text-sm text-muted-foreground">Explicit Words Detected</div>
           </div>
           <div className="glass-card p-6 rounded-xl border-secondary/30">
-            <div className="text-3xl font-bold text-secondary mb-2">3</div>
+            <div className="text-3xl font-bold text-secondary mb-2">
+              {new Set(detectedWords.map(w => w.language)).size}
+            </div>
             <div className="text-sm text-muted-foreground">Languages Detected</div>
           </div>
           <div className="glass-card p-6 rounded-xl border-accent/30">
-            <div className="text-3xl font-bold text-accent mb-2">96.4%</div>
+            <div className="text-3xl font-bold text-accent mb-2">
+              {detectedWords.length > 0 
+                ? `${Math.round((detectedWords.reduce((sum, w) => sum + w.confidence, 0) / detectedWords.length) * 100)}%`
+                : "N/A"
+              }
+            </div>
             <div className="text-sm text-muted-foreground">Average Confidence</div>
           </div>
         </div>
@@ -129,8 +157,8 @@ export const ResultsView = ({ fileName }: ResultsViewProps) => {
             </div>
             {/* Explicit markers */}
             {detectedWords.map((word, idx) => {
-              const position = (word.timestamp / TOTAL_DURATION) * 100;
-              if (position <= (PREVIEW_LIMIT / TOTAL_DURATION) * 100) {
+              const position = (word.timestamp / duration) * 100;
+              if (position <= (PREVIEW_LIMIT / duration) * 100) {
                 return (
                   <div
                     key={idx}
