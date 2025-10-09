@@ -211,9 +211,9 @@ serve(async (req) => {
     const fileSizeMB = bytes.length / (1024 * 1024);
     console.log("[ANALYZE-AUDIO] File size:", fileSizeMB.toFixed(2), "MB");
 
+    // Warn if file is large, but try anyway
     if (fileSizeMB > 24) {
-      console.error("[ANALYZE-AUDIO] File too large for Whisper API");
-      throw new Error(`Audio file is too large (${fileSizeMB.toFixed(1)}MB). OpenAI Whisper supports files up to 25MB. Please try a shorter audio file.`);
+      console.warn("[ANALYZE-AUDIO] File is large (", fileSizeMB.toFixed(2), "MB) - Whisper may reject it");
     }
 
     // Transcribe audio using OpenAI Whisper with retry logic
@@ -265,17 +265,24 @@ serve(async (req) => {
           errorData = { error: { message: errorText } };
         }
 
+        const errorMessage = errorData.error?.message || errorText;
+        
+        // Check for file size error
+        if (errorMessage.includes('file') && (errorMessage.includes('large') || errorMessage.includes('size') || errorMessage.includes('25') || errorMessage.includes('MB'))) {
+          throw new Error("The separated vocals are too large for OpenAI Whisper (25MB limit). Try using a shorter audio file (under 3 minutes), or consider setting up your own Whisper instance on your Hetzner server for larger files.");
+        }
+
         // Retry on 500 server errors, don't retry on client errors (4xx)
         if (whisperResponse.status >= 500 && attempt < maxRetries) {
           const waitTime = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s
           console.log(`[ANALYZE-AUDIO] Retrying in ${waitTime}ms...`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
-          lastError = errorData.error?.message || errorText;
+          lastError = errorMessage;
           continue;
         }
 
         // Don't retry on client errors or last attempt
-        throw new Error(errorData.error?.message || errorText);
+        throw new Error(errorMessage);
       } catch (error) {
         if (attempt === maxRetries) {
           throw new Error(`Whisper API failed after ${maxRetries} attempts: ${error instanceof Error ? error.message : String(error)}`);
