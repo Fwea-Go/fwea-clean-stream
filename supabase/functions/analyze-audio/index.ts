@@ -124,20 +124,20 @@ serve(async (req) => {
     if (transcription.words) {
       console.log("[ANALYZE-AUDIO] Processing", transcription.words.length, "words");
       for (const wordData of transcription.words) {
-        const word = wordData.word.toLowerCase().replace(/[.,!?]/g, "");
+        // Clean the word and get exact match
+        const cleanWord = wordData.word.toLowerCase().trim().replace(/[.,!?;:"']/g, "");
         
-        // Check if word contains explicit content
-        const isExplicit = EXPLICIT_WORDS.some(explicit => 
-          word.includes(explicit) || explicit.includes(word)
-        );
+        // Check if the EXACT word is in the explicit words list (not substring)
+        const isExplicit = EXPLICIT_WORDS.includes(cleanWord);
 
         if (isExplicit) {
+          console.log("[ANALYZE-AUDIO] Found explicit word:", cleanWord, "at", wordData.start);
           explicitWords.push({
             word: wordData.word,
             start: wordData.start || 0,
             end: wordData.end || 0,
             language: transcription.language || "unknown",
-            confidence: 0.9, // Whisper doesn't provide confidence per word
+            confidence: 0.95,
           });
         }
       }

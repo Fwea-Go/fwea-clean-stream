@@ -8,6 +8,7 @@ import { PaywallModal } from "./PaywallModal";
 interface ExplicitWord {
   word: string;
   timestamp: number;
+  end: number;
   language: string;
   confidence: number;
 }
@@ -41,8 +42,9 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
         const words: ExplicitWord[] = data.explicitWords?.map((w: any) => ({
           word: w.word,
           timestamp: w.start || 0,
+          end: w.end || (w.start + 0.3) || 0, // Use actual end time or estimate 0.3s duration
           language: w.language || data.language || "unknown",
-          confidence: w.confidence || 0.9,
+          confidence: w.confidence || 0.95,
         })) || [];
         
         setDetectedWords(words);
@@ -101,15 +103,20 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
     };
   }, []);
 
-  // Handle muting during explicit words
+  // Handle muting during explicit words with minimal bleed
   useEffect(() => {
     if (audioRef.current && detectedWords.length > 0) {
-      const shouldMute = detectedWords.some(word => 
-        currentTime >= word.timestamp && 
-        currentTime <= word.timestamp + 0.5 // Mute for 0.5 seconds
-      );
+      // Use exact word timestamps for precise muting
+      const currentWord = detectedWords.find(word => {
+        return currentTime >= word.timestamp && currentTime <= word.end;
+      });
       
-      audioRef.current.volume = shouldMute ? 0 : 1;
+      // Only mute if we're exactly within an explicit word's timestamp
+      audioRef.current.volume = currentWord ? 0 : 1;
+      
+      if (currentWord && audioRef.current.volume === 0) {
+        console.log('[ResultsView] Muting:', currentWord.word, 'at', currentTime.toFixed(2));
+      }
     }
   }, [currentTime, detectedWords]);
 
@@ -281,11 +288,16 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
             </div>
 
             {hasReachedLimit && (
-              <div className="flex items-center gap-2 justify-center text-secondary text-sm animate-fade-in">
-                <AlertCircle className="h-4 w-4" />
-                <span>Preview limit reached. Upgrade to download the full clean version.</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2 justify-center text-secondary text-sm animate-fade-in">
+              <AlertCircle className="h-4 w-4" />
+              <span>Preview limit reached. Upgrade to download the full clean version.</span>
+            </div>
+          )}
+          
+          <div className="text-center text-xs text-muted-foreground mt-4 space-y-1">
+            <p>🎵 Current mode: Full audio muting during explicit words</p>
+            <p className="text-muted-foreground/70">Vocal-only isolation (keeping instrumentals) coming soon!</p>
+          </div>
           </div>
         </div>
 
