@@ -158,19 +158,23 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         setProgress(40);
         setStatus("Analyzing vocals for explicit content (this may take 2-3 minutes)...");
 
-        // Simulate progress during analysis
+        // Simulate progress during analysis - more conservative to not reach 100% prematurely
         const analysisProgressInterval = setInterval(() => {
-          setProgress(prev => Math.min(prev + 3, 95));
-        }, 10000);
+          setProgress(prev => Math.min(prev + 2, 92));
+        }, 15000); // Slower progress updates
 
         // Step 2: Analyze only the vocal stem for explicit content with retry logic
         let data, error;
         let retryCount = 0;
-        const maxRetries = 2;
+        const maxRetries = 3; // Increased retries
         
         while (retryCount <= maxRetries) {
           try {
             console.log(`[AnalysisProgress] Calling analyze-audio (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+            
+            // Create an AbortController for timeout handling
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minute timeout
             
             const result = await supabase.functions.invoke("analyze-audio", {
               body: {
@@ -179,24 +183,29 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
               },
             });
             
+            clearTimeout(timeoutId);
             data = result.data;
             error = result.error;
             
             // If successful, break out of retry loop
             if (!error && data?.success) {
               clearInterval(analysisProgressInterval);
+              console.log("[AnalysisProgress] Analysis successful");
               break;
             }
             
             // If we got an error, check if it's worth retrying
             if (error) {
               const errorMsg = error.message || "";
+              console.error(`[AnalysisProgress] Analysis error on attempt ${retryCount + 1}:`, errorMsg);
               
-              // Don't retry on certain errors
+              // Don't retry on certain permanent errors
               if (errorMsg.includes("Whisper API failed after") || 
                   errorMsg.includes("too large") ||
                   errorMsg.includes("payment") ||
+                  errorMsg.includes("WHISPER_API_URL not configured") ||
                   errorMsg.includes("credits")) {
+                clearInterval(analysisProgressInterval);
                 break;
               }
             }
@@ -204,9 +213,9 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
             retryCount++;
             
             if (retryCount <= maxRetries) {
-              console.log(`[AnalysisProgress] Retrying in 3 seconds...`);
-              setStatus(`Connection issue, retrying... (attempt ${retryCount + 1}/${maxRetries + 1})`);
-              await new Promise(resolve => setTimeout(resolve, 3000));
+              console.log(`[AnalysisProgress] Will retry in 5 seconds...`);
+              setStatus(`Analysis in progress, retrying connection... (attempt ${retryCount + 1}/${maxRetries + 1})`);
+              await new Promise(resolve => setTimeout(resolve, 5000));
               setStatus("Analyzing vocals for explicit content (this may take 2-3 minutes)...");
             }
           } catch (fetchError) {
@@ -215,13 +224,19 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
             retryCount++;
             
             if (retryCount <= maxRetries) {
-              console.log(`[AnalysisProgress] Retrying after fetch error...`);
-              setStatus(`Connection issue, retrying... (attempt ${retryCount + 1}/${maxRetries + 1})`);
-              await new Promise(resolve => setTimeout(resolve, 3000));
+              console.log(`[AnalysisProgress] Network error, will retry...`);
+              setStatus(`Network issue detected, retrying... (attempt ${retryCount + 1}/${maxRetries + 1})`);
+              await new Promise(resolve => setTimeout(resolve, 5000));
               setStatus("Analyzing vocals for explicit content (this may take 2-3 minutes)...");
+            } else {
+              // On final failure, clear interval
+              clearInterval(analysisProgressInterval);
             }
           }
         }
+        
+        // Always clear interval after loop completes
+        clearInterval(analysisProgressInterval);
 
         if (error) {
           clearInterval(analysisProgressInterval);
