@@ -91,33 +91,12 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
         if (error) {
           console.error("[AnalysisProgress] Analysis error:", error);
-          const errorMsg = error.message || "Failed to analyze audio";
-          
-          // Check for specific error types
-          if (errorMsg.includes("Whisper API failed after")) {
-            throw new Error("OpenAI Whisper is temporarily unavailable. This is an OpenAI server issue - please try again in a few moments.");
-          }
-          
-          if (errorMsg.includes("too large")) {
-            throw new Error(errorMsg + " Try using a shorter audio clip (under 3 minutes recommended).");
-          }
-          
-          throw new Error(errorMsg);
+          throw new Error(error.message || "Failed to analyze audio");
         }
 
         if (!data || !data.success) {
           console.error("[AnalysisProgress] Analysis unsuccessful:", data);
-          const errorMsg = data?.error || "Analysis failed";
-          
-          if (errorMsg.includes("Whisper API") || errorMsg.includes("server_error")) {
-            throw new Error("OpenAI Whisper is temporarily unavailable. This is an OpenAI server issue - please try again in a few moments.");
-          }
-          
-          if (errorMsg.includes("too large")) {
-            throw new Error(errorMsg + " Try using a shorter audio clip (under 3 minutes recommended).");
-          }
-          
-          throw new Error(errorMsg);
+          throw new Error(data?.error || "Analysis failed");
         }
 
         console.log("[AnalysisProgress] Analysis successful:", {
@@ -140,9 +119,15 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
       } catch (error) {
         console.error("[AnalysisProgress] Error analyzing audio:", error);
+        
+        let errorMessage = "Failed to analyze audio";
+        if (error instanceof Error) {
+          errorMessage = error.message;
+        }
+        
         toast({
           title: "Analysis Error",
-          description: error instanceof Error ? error.message : "Failed to analyze audio",
+          description: errorMessage,
           variant: "destructive",
         });
         setStatus("Analysis failed. Please try again.");

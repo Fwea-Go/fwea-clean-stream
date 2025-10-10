@@ -103,6 +103,7 @@ serve(async (req) => {
     console.log("[SEPARATE-AUDIO] Downloading vocals:", vocalsUrl);
     const vocalsResponse = await fetch(vocalsUrl);
     const vocalsBuffer = new Uint8Array(await vocalsResponse.arrayBuffer());
+    console.log("[SEPARATE-AUDIO] Vocals size:", (vocalsBuffer.length / (1024 * 1024)).toFixed(2), "MB");
 
     console.log("[SEPARATE-AUDIO] Downloading accompaniment:", accompanimentUrl);
     const accompanimentResponse = await fetch(accompanimentUrl);
@@ -137,11 +138,42 @@ serve(async (req) => {
       .from("audio-files")
       .getPublicUrl(instrumentalPath);
 
-    // Store vocals in storage for analysis (instead of base64)
+    // Compress vocals for analysis if needed (ensure under 25MB for Whisper)
+    let analysisVocalsBuffer = vocalsBuffer;
+    const maxSizeMB = 24; // Keep under 25MB limit with some margin
+    const currentSizeMB = vocalsBuffer.length / (1024 * 1024);
+    
+    if (currentSizeMB > maxSizeMB) {
+      console.log(`[SEPARATE-AUDIO] Vocals too large (${currentSizeMB.toFixed(2)}MB), compressing for analysis...`);
+      
+      // Convert to lower bitrate MP3 using FFmpeg via Replicate
+      try {
+        const compressOutput: any = await replicate.run(
+          "victor-upmaru/ffmpeg:70e7bb3e5f1cdc526e92bdedba7c0d0e3119d7b8be49d1da5e71e6eac7c4f30c",
+          {
+            input: {
+              audio: vocalsUrl,
+              audio_codec: "libmp3lame",
+              audio_bitrate: "64k", // Lower bitrate for smaller file
+            }
+          }
+        );
+        
+        console.log("[SEPARATE-AUDIO] Downloading compressed vocals:", compressOutput);
+        const compressedResponse = await fetch(compressOutput);
+        analysisVocalsBuffer = new Uint8Array(await compressedResponse.arrayBuffer());
+        console.log("[SEPARATE-AUDIO] Compressed vocals size:", (analysisVocalsBuffer.length / (1024 * 1024)).toFixed(2), "MB");
+      } catch (compressError) {
+        console.error("[SEPARATE-AUDIO] Compression failed, using original:", compressError);
+        // Fall back to using original if compression fails
+      }
+    }
+
+    // Store vocals for analysis
     const vocalsAnalysisPath = `${user.id}/vocals/${fileName}-vocals.mp3`;
     await supabaseClient.storage
       .from("audio-files")
-      .upload(vocalsAnalysisPath, vocalsBuffer, {
+      .upload(vocalsAnalysisPath, analysisVocalsBuffer, {
         contentType: "audio/mpeg",
         upsert: true,
       });
