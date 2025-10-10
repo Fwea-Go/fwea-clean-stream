@@ -134,7 +134,6 @@ const Index = () => {
       {appState === "results" && (
         <ResultsView
           fileName={uploadedFile?.name || "Demo Song"}
-          downloadUrl={sessionStorage.getItem("cleanAudioUrl") || ""}
           onAnalyzeAnother={handleAnalyzeAnother}
         />
       )}
