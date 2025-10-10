@@ -210,24 +210,21 @@ serve(async (req) => {
     const fileSizeMB = bytes.length / (1024 * 1024);
     console.log("[ANALYZE-AUDIO] File size:", fileSizeMB.toFixed(2), "MB");
 
-    // Using self-hosted Whisper - no file size limits!
+    // Using custom Hetzner Whisper backend
     const whisperApiUrl = Deno.env.get("WHISPER_API_URL");
     if (!whisperApiUrl) {
       console.error("[ANALYZE-AUDIO] WHISPER_API_URL not set");
-      throw new Error("WHISPER_API_URL not configured");
+      throw new Error("WHISPER_API_URL not configured. Please set it to your Hetzner server URL (e.g., http://178.156.190.229:9000)");
     }
 
-    // Remove trailing /asr if present since we'll add it with query params
-    const baseUrl = whisperApiUrl.replace(/\/asr\/?$/, '');
-    console.log("[ANALYZE-AUDIO] Using self-hosted Whisper at:", baseUrl);
+    // Remove trailing slash if present
+    const baseUrl = whisperApiUrl.replace(/\/$/, '');
+    console.log("[ANALYZE-AUDIO] Using Hetzner Whisper backend at:", baseUrl);
 
-    // Prepare request for ahmetoner/whisper-asr-webservice
+    // Prepare request for custom Flask backend
     const formData = new FormData();
     const blob = new Blob([bytes], { type: "audio/mpeg" });
-    formData.append("audio_file", blob, "audio.mp3");
-    formData.append("word_timestamps", "true");  // CRITICAL: Request word-level timestamps
-    formData.append("encode", "true");  // Enable audio encoding
-    formData.append("language", "en");  // Hint that it's English (helps with accuracy)
+    formData.append("file", blob, "audio.mp3");  // Flask expects 'file' field
 
     // Retry logic for transient network errors
     const maxRetries = 3;
@@ -235,12 +232,11 @@ serve(async (req) => {
     let lastError;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      console.log(`[ANALYZE-AUDIO] Calling self-hosted Whisper (attempt ${attempt}/${maxRetries})...`);
+      console.log(`[ANALYZE-AUDIO] Calling Hetzner Whisper backend (attempt ${attempt}/${maxRetries})...`);
+      console.log(`[ANALYZE-AUDIO] Request URL: ${baseUrl}/analyze`);
       
       try {
-        // ahmetoner/whisper-asr-webservice API endpoint with word timestamps
-        // Using medium model for better accuracy on vocals (base model struggles with music)
-        whisperResponse = await fetch(`${baseUrl}/asr?task=transcribe&language=en&output=json&encode=true&word_timestamps=true`, {
+        whisperResponse = await fetch(`${baseUrl}/analyze`, {
           method: "POST",
           body: formData,
         });
@@ -264,10 +260,12 @@ serve(async (req) => {
         }
 
         // Don't retry on client errors or last attempt
-        throw new Error(errorText);
+        throw new Error(`Hetzner backend error: ${errorText}`);
       } catch (error) {
+        console.error(`[ANALYZE-AUDIO] Network error on attempt ${attempt}:`, error);
+        
         if (attempt === maxRetries) {
-          throw new Error(`Self-hosted Whisper failed after ${maxRetries} attempts: ${error instanceof Error ? error.message : String(error)}`);
+          throw new Error(`Hetzner Whisper backend failed after ${maxRetries} attempts: ${error instanceof Error ? error.message : String(error)}. Check if server is running at ${baseUrl} and CORS is enabled.`);
         }
         lastError = error instanceof Error ? error.message : String(error);
         
@@ -283,14 +281,15 @@ serve(async (req) => {
     }
 
     const rawTranscription = await whisperResponse.json();
-    console.log("[ANALYZE-AUDIO] Raw response:", JSON.stringify(rawTranscription).substring(0, 500));
+    console.log("[ANALYZE-AUDIO] Raw response:", JSON.stringify(rawTranscription).substring(0, 1000));
 
-    // Parse ahmetoner/whisper-asr-webservice response format
+    // Parse response from custom Flask backend
+    // Flexible parsing to handle various response formats
     const transcription = {
-      text: rawTranscription.text || "",
-      language: rawTranscription.language || "unknown",
+      text: rawTranscription.text || rawTranscription.transcript || "",
+      language: rawTranscription.language || rawTranscription.detected_language || "unknown",
       duration: rawTranscription.duration || 0,
-      words: rawTranscription.segments?.flatMap((segment: any) => 
+      words: rawTranscription.words || rawTranscription.segments?.flatMap((segment: any) => 
         segment.words?.map((w: any) => ({
           word: w.word || w.text || "",
           start: w.start || 0,
