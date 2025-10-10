@@ -224,58 +224,36 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
 
   const handleDownload = async () => {
     if (isAdmin) {
-      // Admin users can download the fully mixed clean version
+      // Admin users can download clean stems directly
       try {
         const vocalsUrl = sessionStorage.getItem('vocalsUrl');
         const instrumentalUrl = sessionStorage.getItem('instrumentalUrl');
-        const analysisData = sessionStorage.getItem('audioAnalysis');
         
-        if (!vocalsUrl || !instrumentalUrl || !analysisData) {
+        if (!vocalsUrl || !instrumentalUrl) {
           console.error('Missing required data for download');
           return;
         }
         
-        const analysis = JSON.parse(analysisData);
-        const explicitWords = analysis.explicitWords?.map((w: any) => ({
-          word: w.word,
-          timestamp: Math.max(0, (w.start || 0) - 0.2),
-          end: (w.end || (w.start + 0.5) || 0) + 0.3,
-        })) || [];
+        console.log('[Download] Downloading clean vocals...');
         
-        console.log('[Download] Starting clean audio generation via Hetzner...');
+        // Download vocals (already clean)
+        const vocalsLink = document.createElement('a');
+        vocalsLink.href = vocalsUrl;
+        vocalsLink.download = `${fileName}_vocals_clean.mp3`;
+        document.body.appendChild(vocalsLink);
+        vocalsLink.click();
+        document.body.removeChild(vocalsLink);
         
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          console.error('No session found');
-          return;
-        }
-        
-        const { data, error } = await supabase.functions.invoke('mix-clean-audio', {
-          body: {
-            vocalsUrl,
-            instrumentalUrl,
-            explicitWords,
-            fileName,
-          },
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        });
-        
-        if (error) {
-          console.error('[Download] Error:', error);
-          return;
-        }
-        
-        if (data?.cleanAudioUrl) {
-          console.log('[Download] Clean audio ready from Hetzner:', data.cleanAudioUrl);
-          const link = document.createElement('a');
-          link.href = data.cleanAudioUrl;
-          link.download = `${fileName}_clean.mp3`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-        }
+        // Small delay before second download
+        setTimeout(() => {
+          console.log('[Download] Downloading instrumental...');
+          const instrumentalLink = document.createElement('a');
+          instrumentalLink.href = instrumentalUrl;
+          instrumentalLink.download = `${fileName}_instrumental.mp3`;
+          document.body.appendChild(instrumentalLink);
+          instrumentalLink.click();
+          document.body.removeChild(instrumentalLink);
+        }, 500);
       } catch (error) {
         console.error('[Download] Error:', error);
       }
@@ -415,7 +393,7 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
                 className="bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Download className="h-5 w-5 mr-2" />
-                {isAdmin ? "Download Full Version" : "Download Full Version"}
+                {isAdmin ? "Download Clean Stems" : "Download Full Version"}
               </Button>
             </div>
 

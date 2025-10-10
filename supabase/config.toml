@@ -16,7 +16,3 @@ request_timeout_ms = 180000
 [functions.separate-audio]
 verify_jwt = true
 request_timeout_ms = 360000
-
-[functions.mix-clean-audio]
-verify_jwt = true
-request_timeout_ms = 300000
