@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
 interface AnalysisProgressProps {
@@ -12,7 +12,6 @@ interface AnalysisProgressProps {
 export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProps) => {
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("Uploading audio file...");
-  const [progressInterval, setProgressInterval] = useState<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (!audioFile) {
@@ -25,6 +24,8 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
     }
 
     const analyzeAudio = async () => {
+      let progressTimer: NodeJS.Timeout | null = null;
+      
       try {
         console.log("[AnalysisProgress] Starting analysis for file:", audioFile.name, "Size:", audioFile.size);
         
@@ -69,17 +70,15 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         setProgress(10);
         setStatus("Separating vocals from instrumentals (this may take 2-5 minutes)...");
 
-        // Start gradual progress simulation during separation
-        const separationProgressInterval = setInterval(() => {
+        // Start gradual progress simulation
+        progressTimer = setInterval(() => {
           setProgress(prev => {
-            if (prev < 35) return prev + 0.5;
+            if (prev < 38) return prev + 0.3;
             return prev;
           });
-        }, 2000);
-        setProgressInterval(separationProgressInterval);
+        }, 1500);
 
         // Step 1: Separate audio into vocals and instrumental
-        // Note: This can take 2-5 minutes for full-length songs
         const { data: separationData, error: separationError } = await supabase.functions.invoke("separate-audio", {
           headers: {
             Authorization: `Bearer ${session.access_token}`,
@@ -91,13 +90,12 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         });
 
         if (separationError || !separationData?.success) {
-          if (progressInterval) clearInterval(progressInterval);
+          if (progressTimer) clearInterval(progressTimer);
           console.error("[AnalysisProgress] Separation error:", separationError);
           const errorMsg = separationData?.error || separationError?.message || "Failed to separate audio";
           
-          // Provide helpful error messages
           if (errorMsg.includes('timed out') || errorMsg.includes('longer than expected')) {
-            throw new Error("Audio separation timed out. This usually happens with songs over 4 minutes. Please try with a shorter song or try again (sometimes it works on retry).");
+            throw new Error("Audio separation timed out. This usually happens with songs over 4 minutes. Please try with a shorter song or try again.");
           }
           
           if (errorMsg.includes('payment') || errorMsg.includes('credits')) {
@@ -107,40 +105,68 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
           throw new Error(errorMsg);
         }
 
-        if (progressInterval) clearInterval(progressInterval);
+        if (progressTimer) clearInterval(progressTimer);
         console.log("[AnalysisProgress] Audio separation complete");
 
         setProgress(40);
         setStatus("Analyzing vocals for explicit content (this may take 2-3 minutes)...");
 
-        // Start gradual progress simulation during analysis
-        const analysisProgressInterval = setInterval(() => {
+        // Continue gradual progress simulation for analysis phase
+        progressTimer = setInterval(() => {
           setProgress(prev => {
-            if (prev < 90) return prev + 0.3;
+            if (prev < 92) return prev + 0.2;
             return prev;
           });
-        }, 3000);
-        setProgressInterval(analysisProgressInterval);
+        }, 2000);
 
-        // Step 2: Analyze only the vocal stem for explicit content
-        // No timeout - let it complete naturally
-        const { data, error } = await supabase.functions.invoke("analyze-audio", {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: {
-            storagePath: separationData.vocalsStoragePath,
-            fileName: `${audioFile.name}-vocals`,
-          },
-        });
+        // Step 2: Analyze with automatic retry for network timeouts
+        let analyzeData = null;
+        let analyzeError = null;
+        const maxRetries = 5;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            console.log(`[AnalysisProgress] Calling analyze-audio (attempt ${attempt}/${maxRetries})...`);
+            
+            const response = await supabase.functions.invoke("analyze-audio", {
+              headers: {
+                Authorization: `Bearer ${session.access_token}`,
+              },
+              body: {
+                storagePath: separationData.vocalsStoragePath,
+                fileName: `${audioFile.name}-vocals`,
+              },
+            });
+            
+            analyzeData = response.data;
+            analyzeError = response.error;
+            
+            if (!analyzeError && analyzeData?.success) {
+              console.log("[AnalysisProgress] Analysis successful on attempt", attempt);
+              break;
+            }
+            
+            if (attempt < maxRetries) {
+              console.log(`[AnalysisProgress] Retrying in 3 seconds...`);
+              await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+          } catch (fetchError) {
+            console.error(`[AnalysisProgress] Network error on attempt ${attempt}:`, fetchError);
+            analyzeError = fetchError as any;
+            
+            if (attempt < maxRetries) {
+              console.log(`[AnalysisProgress] Retrying after network error in 3 seconds...`);
+              await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+          }
+        }
 
-        if (progressInterval) clearInterval(progressInterval);
+        if (progressTimer) clearInterval(progressTimer);
 
-        if (error) {
-          console.error("[AnalysisProgress] Analysis error:", error);
-          const errorMsg = error.message || "Failed to analyze audio";
+        if (analyzeError) {
+          console.error("[AnalysisProgress] Analysis error:", analyzeError);
+          const errorMsg = analyzeError.message || "Failed to analyze audio";
           
-          // Check for specific error types
           if (errorMsg.includes("Whisper API failed after")) {
             throw new Error("AI transcription service is temporarily unavailable. Please try again in a few moments.");
           }
@@ -150,15 +176,15 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
           }
           
           if (errorMsg.includes("Failed to fetch")) {
-            throw new Error("Connection timeout. The analysis is taking longer than expected - please try again with a shorter audio file.");
+            throw new Error("Connection timeout. Please try again - the backend is processing but taking longer than expected.");
           }
           
           throw new Error(errorMsg);
         }
 
-        if (!data || !data.success) {
-          console.error("[AnalysisProgress] Analysis unsuccessful:", data);
-          const errorMsg = data?.error || "Analysis failed";
+        if (!analyzeData || !analyzeData.success) {
+          console.error("[AnalysisProgress] Analysis unsuccessful:", analyzeData);
+          const errorMsg = analyzeData?.error || "Analysis failed";
           
           if (errorMsg.includes("Whisper API") || errorMsg.includes("server_error")) {
             throw new Error("AI transcription service is temporarily unavailable. Please try again in a few moments.");
@@ -172,16 +198,16 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         }
 
         console.log("[AnalysisProgress] Analysis successful:", {
-          explicitWordsCount: data.explicitWords?.length,
-          language: data.language,
-          duration: data.duration
+          explicitWordsCount: analyzeData.explicitWords?.length,
+          language: analyzeData.language,
+          duration: analyzeData.duration
         });
 
         setProgress(100);
         setStatus("Analysis complete!");
 
         // Store the results with separated stems
-        sessionStorage.setItem('audioAnalysis', JSON.stringify(data));
+        sessionStorage.setItem('audioAnalysis', JSON.stringify(analyzeData));
         sessionStorage.setItem('vocalsUrl', separationData.vocalsUrl);
         sessionStorage.setItem('instrumentalUrl', separationData.instrumentalUrl);
 
@@ -190,7 +216,7 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         }, 1000);
 
       } catch (error) {
-        if (progressInterval) clearInterval(progressInterval);
+        if (progressTimer) clearInterval(progressTimer);
         console.error("[AnalysisProgress] Error analyzing audio:", error);
         toast({
           title: "Analysis Error",
@@ -208,9 +234,8 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
     return () => {
       clearTimeout(timer);
-      if (progressInterval) clearInterval(progressInterval);
     };
-  }, [audioFile, onComplete, progressInterval]);
+  }, [audioFile, onComplete]);
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-20">
