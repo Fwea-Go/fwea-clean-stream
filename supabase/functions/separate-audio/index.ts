@@ -137,11 +137,46 @@ serve(async (req) => {
       .from("audio-files")
       .getPublicUrl(instrumentalPath);
 
-    // Store vocals in storage for analysis (instead of base64)
+    // Check vocals size and compress if needed for Whisper API (25MB limit)
+    const vocalsSizeMB = vocalsBuffer.length / (1024 * 1024);
+    console.log("[SEPARATE-AUDIO] Vocals size:", vocalsSizeMB.toFixed(2), "MB");
+    
+    let analysisVocalsBuffer = vocalsBuffer;
+    
+    if (vocalsSizeMB > 24) {
+      console.log("[SEPARATE-AUDIO] Vocals too large, compressing for Whisper...");
+      
+      try {
+        // Use Replicate to compress the audio to a lower bitrate MP3
+        const compressOutput = await replicate.run(
+          "pollinations/modnet:54032051c81077cd45c4e1098a5f424f4b833c5e6e0e3e0f3b7c6c9a6d8c6c9a",
+          {
+            input: {
+              audio: vocalsUrlData.publicUrl,
+              output_format: "mp3",
+              audio_bitrate: "64k",
+            }
+          }
+        ) as any;
+
+        if (compressOutput && compressOutput.audio) {
+          console.log("[SEPARATE-AUDIO] Compression successful, downloading compressed audio");
+          const compressedResponse = await fetch(compressOutput.audio);
+          analysisVocalsBuffer = new Uint8Array(await compressedResponse.arrayBuffer());
+          const compressedSizeMB = analysisVocalsBuffer.length / (1024 * 1024);
+          console.log("[SEPARATE-AUDIO] Compressed size:", compressedSizeMB.toFixed(2), "MB");
+        }
+      } catch (compressionError) {
+        console.error("[SEPARATE-AUDIO] Compression failed:", compressionError);
+        console.log("[SEPARATE-AUDIO] Using original vocals - analysis may fail if over 25MB");
+      }
+    }
+
+    // Store vocals for analysis
     const vocalsAnalysisPath = `${user.id}/vocals/${fileName}-vocals.mp3`;
     await supabaseClient.storage
       .from("audio-files")
-      .upload(vocalsAnalysisPath, vocalsBuffer, {
+      .upload(vocalsAnalysisPath, analysisVocalsBuffer, {
         contentType: "audio/mpeg",
         upsert: true,
       });

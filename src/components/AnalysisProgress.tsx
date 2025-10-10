@@ -76,7 +76,8 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
         if (separationError || !separationData?.success) {
           console.error("[AnalysisProgress] Separation error:", separationError);
-          throw new Error(separationData?.error || "Failed to separate audio");
+          const errorMsg = separationData?.error || separationError?.message || "Failed to separate audio";
+          throw new Error(errorMsg);
         }
 
         console.log("[AnalysisProgress] Audio separation complete");
@@ -97,32 +98,15 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
         if (error) {
           console.error("[AnalysisProgress] Analysis error:", error);
+          // Extract the actual error message from the backend
           const errorMsg = error.message || "Failed to analyze audio";
-          
-          // Check for specific error types
-          if (errorMsg.includes("Whisper API failed after")) {
-            throw new Error("OpenAI Whisper is temporarily unavailable. This is an OpenAI server issue - please try again in a few moments.");
-          }
-          
-          if (errorMsg.includes("too large")) {
-            throw new Error(errorMsg + " Try using a shorter audio clip (under 3 minutes recommended).");
-          }
-          
           throw new Error(errorMsg);
         }
 
         if (!data || !data.success) {
           console.error("[AnalysisProgress] Analysis unsuccessful:", data);
+          // Extract the actual error message from the backend response
           const errorMsg = data?.error || "Analysis failed";
-          
-          if (errorMsg.includes("Whisper API") || errorMsg.includes("server_error")) {
-            throw new Error("OpenAI Whisper is temporarily unavailable. This is an OpenAI server issue - please try again in a few moments.");
-          }
-          
-          if (errorMsg.includes("too large")) {
-            throw new Error(errorMsg + " Try using a shorter audio clip (under 3 minutes recommended).");
-          }
-          
           throw new Error(errorMsg);
         }
 
