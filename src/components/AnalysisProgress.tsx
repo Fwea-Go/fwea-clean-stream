@@ -68,29 +68,88 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         setProgress(10);
         setStatus("Separating vocals from instrumentals (this may take 2-5 minutes)...");
 
-        // Step 1: Separate audio into vocals and instrumental
+        // Step 1: Separate audio into vocals and instrumental with retry logic
         // Note: This can take 2-5 minutes for full-length songs
-        const { data: separationData, error: separationError } = await supabase.functions.invoke("separate-audio", {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: {
-            storagePath: storagePath,
-            fileName: audioFile.name,
-          },
-        });
+        let separationData, separationError;
+        let separationRetryCount = 0;
+        const maxSeparationRetries = 1;
+        
+        // Simulate progress during separation
+        const separationProgressInterval = setInterval(() => {
+          setProgress(prev => Math.min(prev + 2, 38));
+        }, 8000);
+        
+        while (separationRetryCount <= maxSeparationRetries) {
+          try {
+            console.log(`[AnalysisProgress] Calling separate-audio (attempt ${separationRetryCount + 1}/${maxSeparationRetries + 1})...`);
+            
+            const result = await supabase.functions.invoke("separate-audio", {
+              headers: {
+                Authorization: `Bearer ${session.access_token}`,
+              },
+              body: {
+                storagePath: storagePath,
+                fileName: audioFile.name,
+              },
+            });
+            
+            clearInterval(separationProgressInterval);
+            separationData = result.data;
+            separationError = result.error;
+            
+            // If successful, break out of retry loop
+            if (!separationError && separationData?.success) {
+              break;
+            }
+            
+            // If we got an error, check if it's worth retrying
+            if (separationError) {
+              const errorMsg = separationError.message || "";
+              
+              // Don't retry on certain errors
+              if (errorMsg.includes('payment') || errorMsg.includes('credits')) {
+                break;
+              }
+            }
+            
+            separationRetryCount++;
+            
+            if (separationRetryCount <= maxSeparationRetries) {
+              console.log(`[AnalysisProgress] Retrying separation in 5 seconds...`);
+              setStatus(`Separation taking longer than expected, retrying... (attempt ${separationRetryCount + 1}/${maxSeparationRetries + 1})`);
+              await new Promise(resolve => setTimeout(resolve, 5000));
+              setStatus("Separating vocals from instrumentals (this may take 2-5 minutes)...");
+            }
+          } catch (fetchError) {
+            clearInterval(separationProgressInterval);
+            console.error(`[AnalysisProgress] Separation fetch error on attempt ${separationRetryCount + 1}:`, fetchError);
+            separationError = fetchError as any;
+            separationRetryCount++;
+            
+            if (separationRetryCount <= maxSeparationRetries) {
+              console.log(`[AnalysisProgress] Retrying after fetch error...`);
+              setStatus(`Connection issue during separation, retrying... (attempt ${separationRetryCount + 1}/${maxSeparationRetries + 1})`);
+              await new Promise(resolve => setTimeout(resolve, 5000));
+              setStatus("Separating vocals from instrumentals (this may take 2-5 minutes)...");
+            }
+          }
+        }
 
         if (separationError || !separationData?.success) {
-          console.error("[AnalysisProgress] Separation error:", separationError);
+          console.error("[AnalysisProgress] Separation error after retries:", separationError);
           const errorMsg = separationData?.error || separationError?.message || "Failed to separate audio";
           
           // Provide helpful error messages
           if (errorMsg.includes('timed out') || errorMsg.includes('longer than expected')) {
-            throw new Error("Audio separation timed out. This usually happens with songs over 4 minutes. Please try with a shorter song or try again (sometimes it works on retry).");
+            throw new Error("Audio separation timed out. This usually happens with very long songs. Please try with a shorter song or try again.");
           }
           
           if (errorMsg.includes('payment') || errorMsg.includes('credits')) {
             throw new Error("Audio separation service requires credits. Please contact support.");
+          }
+          
+          if (errorMsg.includes("Failed to fetch") || errorMsg.includes("send a request")) {
+            throw new Error("The separation is taking longer than expected. The Replicate service might be under heavy load. Please try again in a few moments.");
           }
           
           throw new Error(errorMsg);
@@ -99,21 +158,79 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         console.log("[AnalysisProgress] Audio separation complete");
 
         setProgress(40);
-        setStatus("Analyzing vocals for explicit content...");
+        setStatus("Analyzing vocals for explicit content (this may take 2-3 minutes)...");
 
-        // Step 2: Analyze only the vocal stem for explicit content
-        const { data, error } = await supabase.functions.invoke("analyze-audio", {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: {
-            storagePath: separationData.vocalsStoragePath,
-            fileName: `${audioFile.name}-vocals`,
-          },
-        });
+        // Simulate progress during analysis
+        const analysisProgressInterval = setInterval(() => {
+          setProgress(prev => Math.min(prev + 3, 95));
+        }, 10000);
+
+        // Step 2: Analyze only the vocal stem for explicit content with retry logic
+        let data, error;
+        let retryCount = 0;
+        const maxRetries = 2;
+        
+        while (retryCount <= maxRetries) {
+          try {
+            console.log(`[AnalysisProgress] Calling analyze-audio (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+            
+            const result = await supabase.functions.invoke("analyze-audio", {
+              headers: {
+                Authorization: `Bearer ${session.access_token}`,
+              },
+              body: {
+                storagePath: separationData.vocalsStoragePath,
+                fileName: `${audioFile.name}-vocals`,
+              },
+            });
+            
+            data = result.data;
+            error = result.error;
+            
+            // If successful, break out of retry loop
+            if (!error && data?.success) {
+              clearInterval(analysisProgressInterval);
+              break;
+            }
+            
+            // If we got an error, check if it's worth retrying
+            if (error) {
+              const errorMsg = error.message || "";
+              
+              // Don't retry on certain errors
+              if (errorMsg.includes("Whisper API failed after") || 
+                  errorMsg.includes("too large") ||
+                  errorMsg.includes("payment") ||
+                  errorMsg.includes("credits")) {
+                break;
+              }
+            }
+            
+            retryCount++;
+            
+            if (retryCount <= maxRetries) {
+              console.log(`[AnalysisProgress] Retrying in 3 seconds...`);
+              setStatus(`Connection issue, retrying... (attempt ${retryCount + 1}/${maxRetries + 1})`);
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              setStatus("Analyzing vocals for explicit content (this may take 2-3 minutes)...");
+            }
+          } catch (fetchError) {
+            console.error(`[AnalysisProgress] Fetch error on attempt ${retryCount + 1}:`, fetchError);
+            error = fetchError as any;
+            retryCount++;
+            
+            if (retryCount <= maxRetries) {
+              console.log(`[AnalysisProgress] Retrying after fetch error...`);
+              setStatus(`Connection issue, retrying... (attempt ${retryCount + 1}/${maxRetries + 1})`);
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              setStatus("Analyzing vocals for explicit content (this may take 2-3 minutes)...");
+            }
+          }
+        }
 
         if (error) {
-          console.error("[AnalysisProgress] Analysis error:", error);
+          clearInterval(analysisProgressInterval);
+          console.error("[AnalysisProgress] Analysis error after retries:", error);
           const errorMsg = error.message || "Failed to analyze audio";
           
           // Check for specific error types
@@ -125,10 +242,15 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
             throw new Error(errorMsg + " Try using a shorter audio clip (under 3 minutes recommended).");
           }
           
+          if (errorMsg.includes("Failed to fetch") || errorMsg.includes("send a request")) {
+            throw new Error("The analysis is taking longer than expected. The Hetzner server might be under heavy load. Please try again in a few moments.");
+          }
+          
           throw new Error(errorMsg);
         }
 
         if (!data || !data.success) {
+          clearInterval(analysisProgressInterval);
           console.error("[AnalysisProgress] Analysis unsuccessful:", data);
           const errorMsg = data?.error || "Analysis failed";
           
