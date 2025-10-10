@@ -7,148 +7,23 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Enhanced explicit words detection using AI
-async function detectExplicitWords(words: any[], transcript: string) {
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-  if (!LOVABLE_API_KEY) {
-    console.warn("[ANALYZE-AUDIO] LOVABLE_API_KEY not set, falling back to basic detection");
-    return basicDetection(words);
-  }
-
-  try {
-    console.log("[ANALYZE-AUDIO] Using AI for explicit content detection");
-    
-    // Create a list of words with timestamps for AI analysis
-    const wordList = words.map((w: any, idx: number) => ({
-      index: idx,
-      word: w.word,
-      start: w.start,
-      end: w.end
-    }));
-
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [{
-          role: "system",
-          content: `You are an EXTREMELY STRICT content moderator for broadcast media. Your job is to identify EVERY SINGLE explicit, profane, vulgar, or offensive word - no exceptions, no matter how mild.
-
-Return a JSON object with an array called "explicit_indices" containing the array indices of explicit words from the provided word list.
-
-CRITICAL WORDS YOU MUST ALWAYS CATCH (this is not exhaustive, catch ALL similar words):
-- fuck, fucking, fucked, fucker, fck, fuk, f*ck
-- shit, shitting, sht, sh*t  
-- bitch, bitches, b*tch (VERY IMPORTANT - never miss this)
-- ass, asshole, a**, azz
-- damn, dammit, damned
-- hell
-- dick, cock, penis references
-- pussy, vagina references
-- cunt, c*nt
-- bastard
-- motherfucker, mf
-- nigga, nigger, n-word (any variation)
-- whore, hoe, slut
-- piss, pissed
-
-Also catch:
-- ALL racial/ethnic slurs
-- ALL sexual/anatomical terms
-- ALL violent/aggressive profanity
-- Slang versions (frickin, dang, freaking, etc.)
-- Words in ANY language (Spanish: puta, mierda, etc.)
-
-DO NOT MISS COMMON WORDS LIKE "BITCH" - this is critical for content safety.`
-        }, {
-          role: "user",
-          content: `Transcript: "${transcript}"\n\nWord list with indices:\n${JSON.stringify(wordList, null, 2)}\n\nAnalyze EVERY word carefully. Return explicit_indices array.`
-        }],
-        response_format: { type: "json_object" }
-      }),
-    });
-
-    if (!response.ok) {
-      console.error("[ANALYZE-AUDIO] AI detection failed:", await response.text());
-      return basicDetection(words);
-    }
-
-    const result = await response.json();
-    const aiResponse = JSON.parse(result.choices[0].message.content);
-    const explicitIndices = aiResponse.explicit_indices || [];
-    
-    console.log(`[ANALYZE-AUDIO] AI detected ${explicitIndices.length} explicit words`);
-
-    const explicitWords = explicitIndices.map((idx: number) => {
-      const wordData = words[idx];
-      console.log(`[ANALYZE-AUDIO] AI flagged: "${wordData.word}" at ${wordData.start}s`);
-      return {
-        word: wordData.word,
-        start: wordData.start || 0,
-        end: wordData.end || 0,
-        language: "detected_by_ai",
-        confidence: 0.98,
-      };
-    });
-
-    // Double-check with basic detection to catch any missed common words
-    const basicWords = basicDetection(words);
-    const basicWordsNotInAI = basicWords.filter((bw: any) => 
-      !explicitWords.some((ew: any) => ew.word === bw.word && Math.abs(ew.start - bw.start) < 0.1)
-    );
-    
-    if (basicWordsNotInAI.length > 0) {
-      console.log(`[ANALYZE-AUDIO] Basic detection caught ${basicWordsNotInAI.length} additional words AI missed`);
-      basicWordsNotInAI.forEach(w => console.log(`[ANALYZE-AUDIO] Adding missed word: "${w.word}" at ${w.start}s`));
-      explicitWords.push(...basicWordsNotInAI);
-    }
-
-    return explicitWords;
-  } catch (error) {
-    console.error("[ANALYZE-AUDIO] AI detection error:", error);
-    return basicDetection(words);
-  }
-}
-
-// Fallback basic detection
-function basicDetection(words: any[]) {
-  const EXPLICIT_WORDS = [
-    // English
-    "fuck", "fucking", "fucked", "fucker", "fck", "fuk", "shit", "damn", "bitch", "bitches", 
-    "ass", "asshole", "bastard", "hell", "crap", "dick", "cock", "pussy", "piss", "cunt", 
-    "motherfucker", "bullshit", "nigga", "nigger", "whore", "slut", "hoe",
-    // Spanish
-    "mierda", "puta", "puto", "carajo", "coño", "joder", "pendejo", "chinga", "verga", "perra",
-    // French
-    "merde", "putain", "con", "connard", "salope", "bordel", "enculé",
-    // German
-    "scheiße", "fick", "arsch", "verdammt", "hurensohn",
-    // Portuguese
-    "porra", "caralho", "foda", "merda", "puta", "filho da puta",
-    // Italian
-    "cazzo", "merda", "puttana", "stronzo", "vaffanculo",
-  ];
-
-  const explicitWords = [];
-  for (const wordData of words) {
-    const cleanWord = wordData.word.toLowerCase().trim().replace(/[.,!?;:"']/g, "");
-    if (EXPLICIT_WORDS.includes(cleanWord)) {
-      console.log("[ANALYZE-AUDIO] Found explicit word:", cleanWord, "at", wordData.start);
-      explicitWords.push({
-        word: wordData.word,
-        start: wordData.start || 0,
-        end: wordData.end || 0,
-        language: "basic_detection",
-        confidence: 0.95,
-      });
-    }
-  }
-  return explicitWords;
-}
+// Comprehensive explicit words list (multilingual)
+const EXPLICIT_WORDS = [
+  // English
+  "fuck", "fucking", "shit", "damn", "bitch", "ass", "asshole", "bastard", "hell", "crap",
+  "dick", "cock", "pussy", "piss", "cunt", "motherfucker", "bullshit", "nigga", "nigger",
+  // Spanish
+  "mierda", "puta", "puto", "carajo", "coño", "joder", "pendejo", "chinga", "verga",
+  // French
+  "merde", "putain", "con", "connard", "salope", "bordel",
+  // German
+  "scheiße", "fick", "arsch", "verdammt",
+  // Portuguese
+  "porra", "caralho", "foda", "merda", "puta",
+  // Italian
+  "cazzo", "merda", "puttana", "stronzo",
+  // Add more languages as needed
+];
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -207,38 +82,44 @@ serve(async (req) => {
     const bytes = new Uint8Array(await audioData.arrayBuffer());
     console.log("[ANALYZE-AUDIO] File downloaded, bytes length:", bytes.length);
 
+    // Check file size (OpenAI Whisper has a 25MB limit)
     const fileSizeMB = bytes.length / (1024 * 1024);
     console.log("[ANALYZE-AUDIO] File size:", fileSizeMB.toFixed(2), "MB");
 
-    // Using self-hosted Whisper - no file size limits!
-    const whisperApiUrl = Deno.env.get("WHISPER_API_URL");
-    if (!whisperApiUrl) {
-      console.error("[ANALYZE-AUDIO] WHISPER_API_URL not set");
-      throw new Error("WHISPER_API_URL not configured");
+    if (fileSizeMB > 24) {
+      console.error("[ANALYZE-AUDIO] File too large for Whisper API");
+      throw new Error(`Audio file is too large (${fileSizeMB.toFixed(1)}MB). OpenAI Whisper supports files up to 25MB. Please try a shorter audio file.`);
     }
 
-    // Remove trailing /asr if present since we'll add it with query params
-    const baseUrl = whisperApiUrl.replace(/\/asr\/?$/, '');
-    console.log("[ANALYZE-AUDIO] Using self-hosted Whisper at:", baseUrl);
-
-    // Prepare request for ahmetoner/whisper-asr-webservice
+    // Transcribe audio using OpenAI Whisper with retry logic
+    console.log("[ANALYZE-AUDIO] Preparing Whisper request");
     const formData = new FormData();
     const blob = new Blob([bytes], { type: "audio/mpeg" });
-    formData.append("audio_file", blob, "audio.mp3");
-    formData.append("word_timestamps", "true");  // CRITICAL: Request word-level timestamps
+    formData.append("file", blob, "audio.mp3");
+    formData.append("model", "whisper-1");
+    formData.append("response_format", "verbose_json");
+    formData.append("timestamp_granularities[]", "word");
 
-    // Retry logic for transient network errors
+    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openaiApiKey) {
+      console.error("[ANALYZE-AUDIO] OPENAI_API_KEY not set");
+      throw new Error("OPENAI_API_KEY not configured");
+    }
+
+    // Retry logic for transient errors
     const maxRetries = 3;
     let whisperResponse;
     let lastError;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      console.log(`[ANALYZE-AUDIO] Calling self-hosted Whisper (attempt ${attempt}/${maxRetries})...`);
+      console.log(`[ANALYZE-AUDIO] Calling OpenAI Whisper API (attempt ${attempt}/${maxRetries})...`);
       
       try {
-        // ahmetoner/whisper-asr-webservice API endpoint with word timestamps
-        whisperResponse = await fetch(`${baseUrl}/asr?task=transcribe&output=json&word_timestamps=true`, {
+        whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
           method: "POST",
+          headers: {
+            "Authorization": `Bearer ${openaiApiKey}`,
+          },
           body: formData,
         });
 
@@ -250,28 +131,31 @@ serve(async (req) => {
 
         const errorText = await whisperResponse.text();
         console.error(`[ANALYZE-AUDIO] Whisper error (attempt ${attempt}):`, errorText);
+        
+        // Parse error to check if it's retryable
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: { message: errorText } };
+        }
 
-        // Retry on 500 server errors or network issues
+        // Retry on 500 server errors, don't retry on client errors (4xx)
         if (whisperResponse.status >= 500 && attempt < maxRetries) {
           const waitTime = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s
           console.log(`[ANALYZE-AUDIO] Retrying in ${waitTime}ms...`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
-          lastError = errorText;
+          lastError = errorData.error?.message || errorText;
           continue;
         }
 
         // Don't retry on client errors or last attempt
-        throw new Error(errorText);
+        throw new Error(errorData.error?.message || errorText);
       } catch (error) {
         if (attempt === maxRetries) {
-          throw new Error(`Self-hosted Whisper failed after ${maxRetries} attempts: ${error instanceof Error ? error.message : String(error)}`);
+          throw new Error(`Whisper API failed after ${maxRetries} attempts: ${error instanceof Error ? error.message : String(error)}`);
         }
         lastError = error instanceof Error ? error.message : String(error);
-        
-        // Wait before retry
-        const waitTime = Math.pow(2, attempt) * 1000;
-        console.log(`[ANALYZE-AUDIO] Network error, retrying in ${waitTime}ms...`);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
       }
     }
 
@@ -279,28 +163,11 @@ serve(async (req) => {
       throw new Error(`Whisper API error: ${lastError || "Unknown error"}`);
     }
 
-    const rawTranscription = await whisperResponse.json();
-    console.log("[ANALYZE-AUDIO] Raw response:", JSON.stringify(rawTranscription).substring(0, 200));
+    const transcription = await whisperResponse.json();
+    console.log("[ANALYZE-AUDIO] Transcription complete, text length:", transcription.text?.length || 0);
 
-    // Parse ahmetoner/whisper-asr-webservice response format
-    const transcription = {
-      text: rawTranscription.text || "",
-      language: rawTranscription.language || "unknown",
-      duration: rawTranscription.duration || 0,
-      words: rawTranscription.segments?.flatMap((segment: any) => 
-        segment.words?.map((w: any) => ({
-          word: w.word || w.text || "",
-          start: w.start || 0,
-          end: w.end || 0,
-        })) || []
-      ) || []
-    };
-
-    console.log("[ANALYZE-AUDIO] Transcription complete, text length:", transcription.text.length);
-    console.log("[ANALYZE-AUDIO] Words found:", transcription.words.length);
-
-    // Detect explicit words using AI-enhanced detection
-    let explicitWords: Array<{
+    // Detect explicit words with timestamps
+    const explicitWords: Array<{
       word: string;
       start: number;
       end: number;
@@ -308,13 +175,29 @@ serve(async (req) => {
       confidence: number;
     }> = [];
 
-    if (transcription.words && transcription.words.length > 0) {
+    if (transcription.words) {
       console.log("[ANALYZE-AUDIO] Processing", transcription.words.length, "words");
-      explicitWords = await detectExplicitWords(transcription.words, transcription.text);
-      console.log(`[ANALYZE-AUDIO] Found ${explicitWords.length} explicit words`);
-    } else {
-      console.log("[ANALYZE-AUDIO] No word-level timestamps available");
+      for (const wordData of transcription.words) {
+        // Clean the word and get exact match
+        const cleanWord = wordData.word.toLowerCase().trim().replace(/[.,!?;:"']/g, "");
+        
+        // Check if the EXACT word is in the explicit words list (not substring)
+        const isExplicit = EXPLICIT_WORDS.includes(cleanWord);
+
+        if (isExplicit) {
+          console.log("[ANALYZE-AUDIO] Found explicit word:", cleanWord, "at", wordData.start);
+          explicitWords.push({
+            word: wordData.word,
+            start: wordData.start || 0,
+            end: wordData.end || 0,
+            language: transcription.language || "unknown",
+            confidence: 0.95,
+          });
+        }
+      }
     }
+
+    console.log(`[ANALYZE-AUDIO] Found ${explicitWords.length} explicit words`);
 
     // Store analysis in database
     console.log("[ANALYZE-AUDIO] Storing analysis in database");

@@ -4,7 +4,6 @@ import { Play, Pause, Download, AlertCircle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { PaywallModal } from "./PaywallModal";
-import { useAuth } from "@/contexts/AuthContext";
 
 interface ExplicitWord {
   word: string;
@@ -23,15 +22,15 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [showPaywall, setShowPaywall] = useState(false);
+  const [hasReachedLimit, setHasReachedLimit] = useState(false);
   const [detectedWords, setDetectedWords] = useState<ExplicitWord[]>([]);
   const [transcript, setTranscript] = useState("");
   const [duration, setDuration] = useState(180);
   const [isDemo, setIsDemo] = useState(false);
   const vocalsRef = useRef<HTMLAudioElement | null>(null);
   const instrumentalRef = useRef<HTMLAudioElement | null>(null);
-  const { isAdmin } = useAuth();
 
-  const PREVIEW_LIMIT = isAdmin ? Infinity : 30; // Admins get unlimited preview
+  const PREVIEW_LIMIT = 30; // 30 seconds
 
   // Load real analysis data
   useEffect(() => {
@@ -46,15 +45,11 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
       try {
         const data = JSON.parse(analysisData);
         
-        // Map the analysis data to our format with buffer zones
-        // Start muting 0.15s before and end 0.25s after to ensure we catch everything
-        const MUTE_BUFFER_START = 0.15;
-        const MUTE_BUFFER_END = 0.25;
-        
+        // Map the analysis data to our format
         const words: ExplicitWord[] = data.explicitWords?.map((w: any) => ({
           word: w.word,
-          timestamp: Math.max(0, (w.start || 0) - MUTE_BUFFER_START), // Start earlier
-          end: (w.end || (w.start + 0.5) || 0) + MUTE_BUFFER_END, // End later
+          timestamp: w.start || 0,
+          end: w.end || (w.start + 0.3) || 0, // Use actual end time or estimate 0.3s duration
           language: w.language || data.language || "unknown",
           confidence: w.confidence || 0.95,
         })) || [];
@@ -106,16 +101,17 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
       instrumentalAudio.addEventListener('timeupdate', () => {
         setCurrentTime(instrumentalAudio.currentTime);
         
-        // Tighter sync tolerance - sync if off by more than 0.05s
-        if (vocalsAudio && Math.abs(vocalsAudio.currentTime - instrumentalAudio.currentTime) > 0.05) {
+        // Sync vocals to same time
+        if (vocalsAudio && Math.abs(vocalsAudio.currentTime - instrumentalAudio.currentTime) > 0.1) {
           vocalsAudio.currentTime = instrumentalAudio.currentTime;
         }
         
-        // Check if we've reached preview limit (but allow replay)
-        if (instrumentalAudio.currentTime >= PREVIEW_LIMIT) {
+        // Check if we've reached preview limit
+        if (instrumentalAudio.currentTime >= PREVIEW_LIMIT && !hasReachedLimit) {
           instrumentalAudio.pause();
           vocalsAudio.pause();
           setIsPlaying(false);
+          setHasReachedLimit(true);
           setShowPaywall(true);
         }
       });
@@ -150,20 +146,16 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   // Handle muting vocals during explicit words (instrumental keeps playing)
   useEffect(() => {
     if (vocalsRef.current && detectedWords.length > 0) {
-      // Check if we're currently on an explicit word (with buffer)
+      // Check if we're currently on an explicit word
       const currentWord = detectedWords.find(word => {
         return currentTime >= word.timestamp && currentTime <= word.end;
       });
       
-      // Smoothly mute/unmute vocals
-      const targetVolume = currentWord ? 0 : 1;
+      // Mute vocals during explicit words, unmute otherwise
+      vocalsRef.current.volume = currentWord ? 0 : 1;
       
-      if (vocalsRef.current.volume !== targetVolume) {
-        vocalsRef.current.volume = targetVolume;
-        
-        if (targetVolume === 0) {
-          console.log('[ResultsView] Muting vocals:', currentWord!.word, 'at', currentTime.toFixed(2));
-        }
+      if (currentWord && vocalsRef.current.volume === 0) {
+        console.log('[ResultsView] Muting vocals:', currentWord.word, 'at', currentTime.toFixed(2));
       }
     }
   }, [currentTime, detectedWords]);
@@ -195,16 +187,14 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   }, [isPlaying]);
 
   const togglePlayPause = () => {
-    if (!vocalsRef.current || !instrumentalRef.current) {
-      console.error('Audio elements not initialized');
+    if (currentTime >= PREVIEW_LIMIT) {
+      setShowPaywall(true);
       return;
     }
     
-    // If at end of preview, reset to beginning
-    if (currentTime >= PREVIEW_LIMIT) {
-      vocalsRef.current.currentTime = 0;
-      instrumentalRef.current.currentTime = 0;
-      setCurrentTime(0);
+    if (!vocalsRef.current || !instrumentalRef.current) {
+      console.error('Audio elements not initialized');
+      return;
     }
     
     console.log('Toggle play/pause, current state:', isPlaying);
@@ -215,34 +205,6 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  const handleDownload = async () => {
-    if (isAdmin) {
-      // Admin users can download directly
-      const vocalsUrl = sessionStorage.getItem('vocalsUrl');
-      const instrumentalUrl = sessionStorage.getItem('instrumentalUrl');
-      
-      if (vocalsUrl) {
-        const link = document.createElement('a');
-        link.href = vocalsUrl;
-        link.download = `${fileName}_clean_vocals.mp3`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
-      
-      if (instrumentalUrl) {
-        const link = document.createElement('a');
-        link.href = instrumentalUrl;
-        link.download = `${fileName}_instrumental.mp3`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
-    } else {
-      setShowPaywall(true);
-    }
   };
 
   const progressPercentage = (currentTime / PREVIEW_LIMIT) * 100;
@@ -304,15 +266,9 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
         <div className="glass-card rounded-2xl p-8 neon-border">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-2xl font-bold">Clean Version Preview</h3>
-            {isAdmin ? (
-              <Badge variant="outline" className="border-accent text-accent">
-                Admin Access
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="border-primary text-primary">
-                30s Free Preview
-              </Badge>
-            )}
+            <Badge variant="outline" className="border-primary text-primary">
+              30s Free Preview
+            </Badge>
           </div>
 
           {/* Waveform visualization mockup */}
@@ -367,23 +323,23 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
                 ) : (
                   <Play className="h-5 w-5 mr-2" />
                 )}
-                {isDemo ? "Demo Mode - No Audio" : currentTime >= PREVIEW_LIMIT ? "Replay Preview" : isPlaying ? "Pause" : "Play Preview"}
+                {isDemo ? "Demo Mode - No Audio" : currentTime >= PREVIEW_LIMIT ? "Preview Ended" : isPlaying ? "Pause" : "Play Preview"}
               </Button>
               <Button
                 size="lg"
-                onClick={handleDownload}
+                onClick={() => setShowPaywall(true)}
                 disabled={isDemo}
                 className="bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Download className="h-5 w-5 mr-2" />
-                {isAdmin ? "Download Full Version" : "Download Full Version"}
+                Download Full Version
               </Button>
             </div>
 
-            {currentTime >= PREVIEW_LIMIT && !isAdmin && (
-            <div className="flex items-center gap-2 justify-center text-accent text-sm animate-fade-in">
+            {hasReachedLimit && (
+            <div className="flex items-center gap-2 justify-center text-secondary text-sm animate-fade-in">
               <AlertCircle className="h-4 w-4" />
-              <span>30s preview complete. Click play to listen again or upgrade to download the full version.</span>
+              <span>Preview limit reached. Upgrade to download the full clean version.</span>
             </div>
           )}
           

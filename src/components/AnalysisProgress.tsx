@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { Loader2 } from "lucide-react";
+import { Loader2, CheckCircle2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
 interface AnalysisProgressProps {
@@ -24,16 +24,8 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
     }
 
     const analyzeAudio = async () => {
-      let progressTimer: NodeJS.Timeout | null = null;
-      
       try {
         console.log("[AnalysisProgress] Starting analysis for file:", audioFile.name, "Size:", audioFile.size);
-        
-        // Clear any previous demo or analysis data
-        sessionStorage.removeItem('isDemo');
-        sessionStorage.removeItem('audioAnalysis');
-        sessionStorage.removeItem('vocalsUrl');
-        sessionStorage.removeItem('instrumentalUrl');
         
         // Get auth session
         const { data: { session } } = await supabase.auth.getSession();
@@ -46,13 +38,8 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         setProgress(5);
         setStatus("Uploading audio file...");
 
-        // Sanitize filename to remove special characters that can cause storage issues
-        const sanitizedFileName = audioFile.name
-          .replace(/[^\w\s.-]/g, '') // Remove special chars except spaces, dots, dashes
-          .replace(/\s+/g, '_'); // Replace spaces with underscores
-
         // Upload file directly to storage
-        const storagePath = `${session.user.id}/uploads/${Date.now()}-${sanitizedFileName}`;
+        const storagePath = `${session.user.id}/uploads/${Date.now()}-${audioFile.name}`;
         const { error: uploadError } = await supabase.storage
           .from("audio-files")
           .upload(storagePath, audioFile, {
@@ -68,15 +55,7 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         console.log("[AnalysisProgress] File uploaded to:", storagePath);
 
         setProgress(10);
-        setStatus("Separating vocals from instrumentals (this may take 2-5 minutes)...");
-
-        // Start gradual progress simulation
-        progressTimer = setInterval(() => {
-          setProgress(prev => {
-            if (prev < 38) return prev + 0.3;
-            return prev;
-          });
-        }, 1500);
+        setStatus("Separating vocals from instrumentals...");
 
         // Step 1: Separate audio into vocals and instrumental
         const { data: separationData, error: separationError } = await supabase.functions.invoke("separate-audio", {
@@ -90,104 +69,48 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         });
 
         if (separationError || !separationData?.success) {
-          if (progressTimer) clearInterval(progressTimer);
           console.error("[AnalysisProgress] Separation error:", separationError);
-          const errorMsg = separationData?.error || separationError?.message || "Failed to separate audio";
-          
-          if (errorMsg.includes('timed out') || errorMsg.includes('longer than expected')) {
-            throw new Error("Audio separation timed out. This usually happens with songs over 4 minutes. Please try with a shorter song or try again.");
-          }
-          
-          if (errorMsg.includes('payment') || errorMsg.includes('credits')) {
-            throw new Error("Audio separation service requires credits. Please contact support.");
-          }
-          
-          throw new Error(errorMsg);
+          throw new Error(separationData?.error || "Failed to separate audio");
         }
 
-        if (progressTimer) clearInterval(progressTimer);
         console.log("[AnalysisProgress] Audio separation complete");
 
         setProgress(40);
-        setStatus("Analyzing vocals for explicit content (this may take 2-3 minutes)...");
+        setStatus("Analyzing vocals for explicit content...");
 
-        // Continue gradual progress simulation for analysis phase
-        progressTimer = setInterval(() => {
-          setProgress(prev => {
-            if (prev < 92) return prev + 0.2;
-            return prev;
-          });
-        }, 2000);
+        // Step 2: Analyze only the vocal stem for explicit content
+        const { data, error } = await supabase.functions.invoke("analyze-audio", {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: {
+            storagePath: separationData.vocalsStoragePath,
+            fileName: `${audioFile.name}-vocals`,
+          },
+        });
 
-        // Step 2: Analyze with automatic retry for network timeouts
-        let analyzeData = null;
-        let analyzeError = null;
-        const maxRetries = 5;
-        
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            console.log(`[AnalysisProgress] Calling analyze-audio (attempt ${attempt}/${maxRetries})...`);
-            
-            const response = await supabase.functions.invoke("analyze-audio", {
-              headers: {
-                Authorization: `Bearer ${session.access_token}`,
-              },
-              body: {
-                storagePath: separationData.vocalsStoragePath,
-                fileName: `${audioFile.name}-vocals`,
-              },
-            });
-            
-            analyzeData = response.data;
-            analyzeError = response.error;
-            
-            if (!analyzeError && analyzeData?.success) {
-              console.log("[AnalysisProgress] Analysis successful on attempt", attempt);
-              break;
-            }
-            
-            if (attempt < maxRetries) {
-              console.log(`[AnalysisProgress] Retrying in 3 seconds...`);
-              await new Promise(resolve => setTimeout(resolve, 3000));
-            }
-          } catch (fetchError) {
-            console.error(`[AnalysisProgress] Network error on attempt ${attempt}:`, fetchError);
-            analyzeError = fetchError as any;
-            
-            if (attempt < maxRetries) {
-              console.log(`[AnalysisProgress] Retrying after network error in 3 seconds...`);
-              await new Promise(resolve => setTimeout(resolve, 3000));
-            }
-          }
-        }
-
-        if (progressTimer) clearInterval(progressTimer);
-
-        if (analyzeError) {
-          console.error("[AnalysisProgress] Analysis error:", analyzeError);
-          const errorMsg = analyzeError.message || "Failed to analyze audio";
+        if (error) {
+          console.error("[AnalysisProgress] Analysis error:", error);
+          const errorMsg = error.message || "Failed to analyze audio";
           
+          // Check for specific error types
           if (errorMsg.includes("Whisper API failed after")) {
-            throw new Error("AI transcription service is temporarily unavailable. Please try again in a few moments.");
+            throw new Error("OpenAI Whisper is temporarily unavailable. This is an OpenAI server issue - please try again in a few moments.");
           }
           
           if (errorMsg.includes("too large")) {
             throw new Error(errorMsg + " Try using a shorter audio clip (under 3 minutes recommended).");
           }
           
-          if (errorMsg.includes("Failed to fetch")) {
-            throw new Error("Connection timeout. Please try again - the backend is processing but taking longer than expected.");
-          }
-          
           throw new Error(errorMsg);
         }
 
-        if (!analyzeData || !analyzeData.success) {
-          console.error("[AnalysisProgress] Analysis unsuccessful:", analyzeData);
-          const errorMsg = analyzeData?.error || "Analysis failed";
+        if (!data || !data.success) {
+          console.error("[AnalysisProgress] Analysis unsuccessful:", data);
+          const errorMsg = data?.error || "Analysis failed";
           
           if (errorMsg.includes("Whisper API") || errorMsg.includes("server_error")) {
-            throw new Error("AI transcription service is temporarily unavailable. Please try again in a few moments.");
+            throw new Error("OpenAI Whisper is temporarily unavailable. This is an OpenAI server issue - please try again in a few moments.");
           }
           
           if (errorMsg.includes("too large")) {
@@ -198,16 +121,16 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         }
 
         console.log("[AnalysisProgress] Analysis successful:", {
-          explicitWordsCount: analyzeData.explicitWords?.length,
-          language: analyzeData.language,
-          duration: analyzeData.duration
+          explicitWordsCount: data.explicitWords?.length,
+          language: data.language,
+          duration: data.duration
         });
 
         setProgress(100);
         setStatus("Analysis complete!");
 
         // Store the results with separated stems
-        sessionStorage.setItem('audioAnalysis', JSON.stringify(analyzeData));
+        sessionStorage.setItem('audioAnalysis', JSON.stringify(data));
         sessionStorage.setItem('vocalsUrl', separationData.vocalsUrl);
         sessionStorage.setItem('instrumentalUrl', separationData.instrumentalUrl);
 
@@ -216,7 +139,6 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         }, 1000);
 
       } catch (error) {
-        if (progressTimer) clearInterval(progressTimer);
         console.error("[AnalysisProgress] Error analyzing audio:", error);
         toast({
           title: "Analysis Error",
@@ -232,9 +154,7 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
       analyzeAudio();
     }, 500);
 
-    return () => {
-      clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, [audioFile, onComplete]);
 
   return (
@@ -266,14 +186,9 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         <div className="space-y-3 text-center">
           <p className="text-sm text-muted-foreground">
             {progress < 40 
-              ? "Using AI to separate vocals from instrumentals (2-5 minutes for full songs)" 
-              : "Analyzing vocals for explicit content in all languages (2-3 minutes)"}
+              ? "Using AI to separate vocals from instrumentals" 
+              : "Analyzing vocals for explicit content in all languages"}
           </p>
-          {progress >= 10 && progress < 95 && (
-            <p className="text-xs text-accent animate-pulse">
-              Please wait... AI processing is in progress
-            </p>
-          )}
         </div>
       </div>
     </div>
