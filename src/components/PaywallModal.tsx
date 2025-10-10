@@ -42,7 +42,11 @@ export const PaywallModal = ({ open, onOpenChange }: PaywallModalProps) => {
         return;
       }
 
-      const { data, error } = await supabase.functions.invoke("create-payment");
+      const { data, error } = await supabase.functions.invoke("create-payment", {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 
       if (error) throw error;
 
@@ -74,7 +78,11 @@ export const PaywallModal = ({ open, onOpenChange }: PaywallModalProps) => {
         return;
       }
 
-      const { data, error } = await supabase.functions.invoke("create-subscription");
+      const { data, error } = await supabase.functions.invoke("create-subscription", {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 
       if (error) throw error;
 

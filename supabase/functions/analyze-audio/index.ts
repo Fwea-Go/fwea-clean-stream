@@ -226,8 +226,6 @@ serve(async (req) => {
     const blob = new Blob([bytes], { type: "audio/mpeg" });
     formData.append("audio_file", blob, "audio.mp3");
     formData.append("word_timestamps", "true");  // CRITICAL: Request word-level timestamps
-    formData.append("encode", "true");  // Enable audio encoding
-    formData.append("language", "en");  // Hint that it's English (helps with accuracy)
 
     // Retry logic for transient network errors
     const maxRetries = 3;
@@ -239,8 +237,7 @@ serve(async (req) => {
       
       try {
         // ahmetoner/whisper-asr-webservice API endpoint with word timestamps
-        // Using medium model for better accuracy on vocals (base model struggles with music)
-        whisperResponse = await fetch(`${baseUrl}/asr?task=transcribe&language=en&output=json&encode=true&word_timestamps=true`, {
+        whisperResponse = await fetch(`${baseUrl}/asr?task=transcribe&output=json&word_timestamps=true`, {
           method: "POST",
           body: formData,
         });
@@ -283,7 +280,7 @@ serve(async (req) => {
     }
 
     const rawTranscription = await whisperResponse.json();
-    console.log("[ANALYZE-AUDIO] Raw response:", JSON.stringify(rawTranscription).substring(0, 500));
+    console.log("[ANALYZE-AUDIO] Raw response:", JSON.stringify(rawTranscription).substring(0, 200));
 
     // Parse ahmetoner/whisper-asr-webservice response format
     const transcription = {
@@ -300,19 +297,7 @@ serve(async (req) => {
     };
 
     console.log("[ANALYZE-AUDIO] Transcription complete, text length:", transcription.text.length);
-    console.log("[ANALYZE-AUDIO] Full transcript:", transcription.text);
     console.log("[ANALYZE-AUDIO] Words found:", transcription.words.length);
-    
-    // Log first few words for debugging
-    if (transcription.words.length > 0) {
-      const sampleWords = transcription.words.slice(0, 10).map((w: any) => w.word).join(" ");
-      console.log("[ANALYZE-AUDIO] Sample words:", sampleWords);
-    }
-    
-    // Check if transcription seems valid (not just gibberish)
-    if (transcription.text.length < 10 && transcription.words.length < 5) {
-      console.warn("[ANALYZE-AUDIO] Warning: Very short transcription, audio quality might be poor");
-    }
 
     // Detect explicit words using AI-enhanced detection
     let explicitWords: Array<{

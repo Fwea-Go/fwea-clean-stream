@@ -5,7 +5,6 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { PaywallModal } from "./PaywallModal";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
 
 interface ExplicitWord {
   word: string;
@@ -47,10 +46,10 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
       try {
         const data = JSON.parse(analysisData);
         
-        // Map the analysis data to our format with aggressive buffer zones
-        // Start muting 0.2s before and end 0.3s after to ensure we catch everything
-        const MUTE_BUFFER_START = 0.2;
-        const MUTE_BUFFER_END = 0.3;
+        // Map the analysis data to our format with buffer zones
+        // Start muting 0.15s before and end 0.25s after to ensure we catch everything
+        const MUTE_BUFFER_START = 0.15;
+        const MUTE_BUFFER_END = 0.25;
         
         const words: ExplicitWord[] = data.explicitWords?.map((w: any) => ({
           word: w.word,
@@ -103,12 +102,12 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
         console.error('[ResultsView] Instrumental error:', e);
       });
       
-  // Sync time updates from instrumental (which plays continuously)
+      // Sync time updates from instrumental (which plays continuously)
       instrumentalAudio.addEventListener('timeupdate', () => {
         setCurrentTime(instrumentalAudio.currentTime);
         
-        // Very tight sync tolerance - sync if off by more than 0.02s (20ms)
-        if (vocalsAudio && Math.abs(vocalsAudio.currentTime - instrumentalAudio.currentTime) > 0.02) {
+        // Tighter sync tolerance - sync if off by more than 0.05s
+        if (vocalsAudio && Math.abs(vocalsAudio.currentTime - instrumentalAudio.currentTime) > 0.05) {
           vocalsAudio.currentTime = instrumentalAudio.currentTime;
         }
         
@@ -152,15 +151,11 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   useEffect(() => {
     if (vocalsRef.current && detectedWords.length > 0) {
       // Check if we're currently on an explicit word (with buffer)
-      // Use a small lookahead to start muting slightly before the word
-      const lookahead = 0.05;
-      const checkTime = currentTime + lookahead;
-      
       const currentWord = detectedWords.find(word => {
-        return checkTime >= word.timestamp && checkTime <= word.end;
+        return currentTime >= word.timestamp && currentTime <= word.end;
       });
       
-      // Instantly mute/unmute vocals with no transition
+      // Smoothly mute/unmute vocals
       const targetVolume = currentWord ? 0 : 1;
       
       if (vocalsRef.current.volume !== targetVolume) {
@@ -224,38 +219,26 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
 
   const handleDownload = async () => {
     if (isAdmin) {
-      // Admin users can download clean stems directly
-      try {
-        const vocalsUrl = sessionStorage.getItem('vocalsUrl');
-        const instrumentalUrl = sessionStorage.getItem('instrumentalUrl');
-        
-        if (!vocalsUrl || !instrumentalUrl) {
-          console.error('Missing required data for download');
-          return;
-        }
-        
-        console.log('[Download] Downloading clean vocals...');
-        
-        // Download vocals (already clean)
-        const vocalsLink = document.createElement('a');
-        vocalsLink.href = vocalsUrl;
-        vocalsLink.download = `${fileName}_vocals_clean.mp3`;
-        document.body.appendChild(vocalsLink);
-        vocalsLink.click();
-        document.body.removeChild(vocalsLink);
-        
-        // Small delay before second download
-        setTimeout(() => {
-          console.log('[Download] Downloading instrumental...');
-          const instrumentalLink = document.createElement('a');
-          instrumentalLink.href = instrumentalUrl;
-          instrumentalLink.download = `${fileName}_instrumental.mp3`;
-          document.body.appendChild(instrumentalLink);
-          instrumentalLink.click();
-          document.body.removeChild(instrumentalLink);
-        }, 500);
-      } catch (error) {
-        console.error('[Download] Error:', error);
+      // Admin users can download directly
+      const vocalsUrl = sessionStorage.getItem('vocalsUrl');
+      const instrumentalUrl = sessionStorage.getItem('instrumentalUrl');
+      
+      if (vocalsUrl) {
+        const link = document.createElement('a');
+        link.href = vocalsUrl;
+        link.download = `${fileName}_clean_vocals.mp3`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+      
+      if (instrumentalUrl) {
+        const link = document.createElement('a');
+        link.href = instrumentalUrl;
+        link.download = `${fileName}_instrumental.mp3`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       }
     } else {
       setShowPaywall(true);
@@ -393,7 +376,7 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
                 className="bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Download className="h-5 w-5 mr-2" />
-                {isAdmin ? "Download Clean Stems" : "Download Full Version"}
+                {isAdmin ? "Download Full Version" : "Download Full Version"}
               </Button>
             </div>
 
