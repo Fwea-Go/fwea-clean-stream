@@ -23,43 +23,6 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
       return;
     }
 
-    // Check if there's a processing job already in progress
-    const checkExistingJob = () => {
-      const jobState = sessionStorage.getItem('processingJobState');
-      if (jobState) {
-        try {
-          const state = JSON.parse(jobState);
-          const now = Date.now();
-          // If job is less than 10 minutes old, try to resume
-          if (now - state.timestamp < 600000) {
-            console.log("[AnalysisProgress] Found existing job, resuming from:", state.step);
-            setProgress(state.progress);
-            setStatus(state.status);
-            return state;
-          } else {
-            // Clear old job
-            sessionStorage.removeItem('processingJobState');
-          }
-        } catch (e) {
-          console.error("[AnalysisProgress] Failed to parse job state:", e);
-          sessionStorage.removeItem('processingJobState');
-        }
-      }
-      return null;
-    };
-
-    const saveJobState = (step: string, progressValue: number, statusText: string) => {
-      sessionStorage.setItem('processingJobState', JSON.stringify({
-        step,
-        progress: progressValue,
-        status: statusText,
-        timestamp: Date.now()
-      }));
-    };
-
-    const clearJobState = () => {
-      sessionStorage.removeItem('processingJobState');
-    };
 
     const analyzeAudio = async () => {
       try {
@@ -79,11 +42,8 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
         console.log("[AnalysisProgress] Auth session found, uploading to storage");
 
-        const existingJob = checkExistingJob();
-        
         setProgress(5);
         setStatus("Uploading audio file...");
-        saveJobState('upload', 5, "Uploading audio file...");
 
         // Sanitize filename to remove special characters that can cause storage issues
         const sanitizedFileName = audioFile.name
@@ -107,9 +67,7 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         console.log("[AnalysisProgress] File uploaded to:", storagePath);
 
         setProgress(10);
-        const separationStatus = "Separating vocals from instrumentals (this may take 2-5 minutes)...";
-        setStatus(separationStatus);
-        saveJobState('separation', 10, separationStatus);
+        setStatus("Separating vocals from instrumentals (this may take 2-5 minutes)...");
 
         // Step 1: Separate audio into vocals and instrumental with retry logic
         // Note: This can take 2-5 minutes for full-length songs
@@ -198,9 +156,7 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         console.log("[AnalysisProgress] Audio separation complete");
 
         setProgress(40);
-        const analysisStatus = "Analyzing vocals for explicit content (this may take 2-3 minutes)...";
-        setStatus(analysisStatus);
-        saveJobState('analysis', 40, analysisStatus);
+        setStatus("Analyzing vocals for explicit content (this may take 2-3 minutes)...");
 
         // Simulate progress during analysis
         const analysisProgressInterval = setInterval(() => {
@@ -312,7 +268,6 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
         setProgress(100);
         setStatus("Analysis complete!");
-        clearJobState();
 
         // Store the results with separated stems
         sessionStorage.setItem('audioAnalysis', JSON.stringify(data));
@@ -324,7 +279,6 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         }, 1000);
 
       } catch (error) {
-        clearJobState();
         console.error("[AnalysisProgress] Error analyzing audio:", error);
         toast({
           title: "Analysis Error",
