@@ -79,23 +79,11 @@ serve(async (req) => {
 
     console.log("[CHECK-SUBSCRIPTION] Successful payments found:", successfulPayments.length);
 
-    // Check if user has admin role
-    const { data: roleData, error: roleError } = await supabaseClient
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .eq('role', 'admin')
-      .single();
-    
-    const isAdmin = !roleError && roleData !== null;
-    console.log("[CHECK-SUBSCRIPTION] Admin check:", isAdmin);
-
     return new Response(JSON.stringify({
-      subscribed: hasActiveSub || isAdmin,
+      subscribed: hasActiveSub,
       subscription_end: subscriptionEnd,
-      hasPurchase: hasPurchase || isAdmin,
-      purchaseCount: successfulPayments.length,
-      isAdmin
+      hasPurchase: hasPurchase,
+      purchaseCount: successfulPayments.length
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,

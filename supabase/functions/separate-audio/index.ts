@@ -76,12 +76,11 @@ serve(async (req) => {
     // Use Spleeter for fast, high-quality source separation
     let output: any;
     try {
-      // Set a longer timeout for full-length songs (5 minutes)
+      // Set a reasonable timeout (2 minutes)
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Audio separation timed out after 5 minutes')), 300000)
+        setTimeout(() => reject(new Error('Audio separation timed out after 2 minutes')), 120000)
       );
 
-      console.log("[SEPARATE-AUDIO] Starting Replicate job (this may take 2-5 minutes for longer songs)...");
       const separationPromise = replicate.run(
         "soykertje/spleeter:cd128044253523c86abfd743dea680c88559ad975ccd72378c8433f067ab5d0a",
         {
@@ -100,7 +99,7 @@ serve(async (req) => {
       console.error("[SEPARATE-AUDIO] Error details:", JSON.stringify(replicateError, null, 2));
       
       if (replicateError.message?.includes('timed out')) {
-        throw new Error("Audio separation is taking longer than expected. This can happen with very long songs (over 4 minutes). Please try with a shorter audio file.");
+        throw new Error("Audio separation is taking longer than expected. This can happen with longer songs. Please try with a shorter audio file (under 2 minutes).");
       }
       
       if (replicateError.response?.status === 402) {
@@ -129,39 +128,20 @@ serve(async (req) => {
     const vocalsUrl = output.vocals;
     const accompanimentUrl = output.accompaniment;
 
-    // Helper function to download with retry
-    async function downloadWithRetry(url: string, maxRetries = 3) {
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          console.log(`[SEPARATE-AUDIO] Download attempt ${attempt}/${maxRetries} from:`, url);
-          const response = await fetch(url);
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
-          return new Uint8Array(await response.arrayBuffer());
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          console.error(`[SEPARATE-AUDIO] Download attempt ${attempt} failed:`, errorMsg);
-          
-          if (attempt === maxRetries) {
-            throw new Error(`Failed to download after ${maxRetries} attempts: ${errorMsg}`);
-          }
-          
-          // Exponential backoff: 2s, 4s, 8s
-          const waitTime = Math.pow(2, attempt) * 1000;
-          console.log(`[SEPARATE-AUDIO] Retrying in ${waitTime}ms...`);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-        }
-      }
-      throw new Error("Download failed");
-    }
-
     console.log("[SEPARATE-AUDIO] Downloading vocals from:", vocalsUrl);
-    const vocalsBuffer = await downloadWithRetry(vocalsUrl);
+    const vocalsResponse = await fetch(vocalsUrl);
+    if (!vocalsResponse.ok) {
+      throw new Error(`Failed to download vocals: ${vocalsResponse.statusText}`);
+    }
+    const vocalsBuffer = new Uint8Array(await vocalsResponse.arrayBuffer());
     console.log("[SEPARATE-AUDIO] Vocals downloaded, size:", vocalsBuffer.length, "bytes");
 
     console.log("[SEPARATE-AUDIO] Downloading accompaniment from:", accompanimentUrl);
-    const instrumentalBuffer = await downloadWithRetry(accompanimentUrl);
+    const accompanimentResponse = await fetch(accompanimentUrl);
+    if (!accompanimentResponse.ok) {
+      throw new Error(`Failed to download instrumental: ${accompanimentResponse.statusText}`);
+    }
+    const instrumentalBuffer = new Uint8Array(await accompanimentResponse.arrayBuffer());
     console.log("[SEPARATE-AUDIO] Instrumental downloaded, size:", instrumentalBuffer.length, "bytes");
 
     // Store separated stems

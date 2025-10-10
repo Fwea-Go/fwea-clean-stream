@@ -18,7 +18,7 @@ export const Hero = ({ onGetStarted, onShowDemo }: HeroProps) => {
       <div className="relative z-10 max-w-5xl mx-auto text-center animate-slide-up">
         <div className="mb-8">
           <h1 className="text-6xl md:text-8xl font-black mb-4 tracking-tight">
-            <span className="text-foreground" style={{ textShadow: '0 0 10px hsl(189 100% 50%), 0 0 20px hsl(189 100% 50%), 0 0 30px hsl(189 100% 50%)' }}>Fwea-I</span>
+            <span className="text-primary neon-text">Fwea-I</span>
           </h1>
           <p className="text-3xl md:text-4xl font-bold text-foreground mb-2">
             Omnilingual Clean Version Editor
