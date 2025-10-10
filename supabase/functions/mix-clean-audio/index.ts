@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const HETZNER_SERVER = 'http://178.156.190.229:9000/clean';
+const HETZNER_SERVER = 'http://178.156.190.229:9000/clean-audio';
 
 interface ExplicitWord {
   word: string;
@@ -100,8 +100,8 @@ serve(async (req) => {
     const hetznerResult = await hetznerResponse.json();
     console.log('[mix-clean-audio] Hetzner response:', hetznerResult);
 
-    if (hetznerResult.status !== 'success' || !hetznerResult.download_url) {
-      throw new Error('Hetzner server did not return a valid download URL');
+    if (!hetznerResult.download_url) {
+      throw new Error('Hetzner server did not return a download URL');
     }
 
     // Download the clean audio from Hetzner

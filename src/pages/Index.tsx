@@ -54,40 +54,9 @@ const Index = () => {
     sessionStorage.removeItem("audioAnalysis");
     sessionStorage.removeItem("vocalsUrl");
     sessionStorage.removeItem("instrumentalUrl");
+    sessionStorage.removeItem("isDemo");
     setUploadedFile(file);
     setAppState("analyzing");
-
-    // Prepare form data for Hetzner backend
-    const formData = new FormData();
-    formData.append("vocals", file);
-    if (instrumentalFile) {
-      formData.append("instrumental", instrumentalFile);
-    }
-    formData.append("mute_timestamps", JSON.stringify(muteTimestamps));
-    formData.append("render", shouldRender.toString());
-
-    try {
-      const response = await fetch("http://178.156.190.229:9000/clean-audio", {
-        method: "POST",
-        body: formData,
-      });
-
-      const result = await response.json();
-      console.log("Hetzner response:", result);
-
-      if (result?.download_url) {
-        sessionStorage.setItem("cleanAudioUrl", result.download_url);
-        setAppState("results");
-        setUploadedFile(Object.assign(file, { downloadUrl: result.download_url }));
-      } else {
-        alert("Upload failed — no download URL returned.");
-        setAppState("upload");
-      }
-    } catch (error) {
-      console.error("Upload error:", error);
-      setErrorMessage("Unable to connect to the server. Try again.");
-      setAppState("upload");
-    }
   };
 
   const handleAnalyzeAnother = () => {
