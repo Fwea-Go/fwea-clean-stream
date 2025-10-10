@@ -44,8 +44,13 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         setProgress(5);
         setStatus("Uploading audio file...");
 
+        // Sanitize filename to remove special characters that can cause storage issues
+        const sanitizedFileName = audioFile.name
+          .replace(/[^\w\s.-]/g, '') // Remove special chars except spaces, dots, dashes
+          .replace(/\s+/g, '_'); // Replace spaces with underscores
+
         // Upload file directly to storage
-        const storagePath = `${session.user.id}/uploads/${Date.now()}-${audioFile.name}`;
+        const storagePath = `${session.user.id}/uploads/${Date.now()}-${sanitizedFileName}`;
         const { error: uploadError } = await supabase.storage
           .from("audio-files")
           .upload(storagePath, audioFile, {
@@ -61,9 +66,10 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         console.log("[AnalysisProgress] File uploaded to:", storagePath);
 
         setProgress(10);
-        setStatus("Separating vocals from instrumentals...");
+        setStatus("Separating vocals from instrumentals (this may take 2-5 minutes)...");
 
         // Step 1: Separate audio into vocals and instrumental
+        // Note: This can take 2-5 minutes for full-length songs
         const { data: separationData, error: separationError } = await supabase.functions.invoke("separate-audio", {
           headers: {
             Authorization: `Bearer ${session.access_token}`,
@@ -77,6 +83,16 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         if (separationError || !separationData?.success) {
           console.error("[AnalysisProgress] Separation error:", separationError);
           const errorMsg = separationData?.error || separationError?.message || "Failed to separate audio";
+          
+          // Provide helpful error messages
+          if (errorMsg.includes('timed out') || errorMsg.includes('longer than expected')) {
+            throw new Error("Audio separation timed out. This usually happens with songs over 4 minutes. Please try with a shorter song or try again (sometimes it works on retry).");
+          }
+          
+          if (errorMsg.includes('payment') || errorMsg.includes('credits')) {
+            throw new Error("Audio separation service requires credits. Please contact support.");
+          }
+          
           throw new Error(errorMsg);
         }
 
@@ -98,15 +114,32 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
         if (error) {
           console.error("[AnalysisProgress] Analysis error:", error);
-          // Extract the actual error message from the backend
           const errorMsg = error.message || "Failed to analyze audio";
+          
+          // Check for specific error types
+          if (errorMsg.includes("Whisper API failed after")) {
+            throw new Error("OpenAI Whisper is temporarily unavailable. This is an OpenAI server issue - please try again in a few moments.");
+          }
+          
+          if (errorMsg.includes("too large")) {
+            throw new Error(errorMsg + " Try using a shorter audio clip (under 3 minutes recommended).");
+          }
+          
           throw new Error(errorMsg);
         }
 
         if (!data || !data.success) {
           console.error("[AnalysisProgress] Analysis unsuccessful:", data);
-          // Extract the actual error message from the backend response
           const errorMsg = data?.error || "Analysis failed";
+          
+          if (errorMsg.includes("Whisper API") || errorMsg.includes("server_error")) {
+            throw new Error("OpenAI Whisper is temporarily unavailable. This is an OpenAI server issue - please try again in a few moments.");
+          }
+          
+          if (errorMsg.includes("too large")) {
+            throw new Error(errorMsg + " Try using a shorter audio clip (under 3 minutes recommended).");
+          }
+          
           throw new Error(errorMsg);
         }
 
@@ -130,17 +163,12 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
       } catch (error) {
         console.error("[AnalysisProgress] Error analyzing audio:", error);
-        const errorMessage = error instanceof Error ? error.message : "Failed to analyze audio";
-        
         toast({
           title: "Analysis Error",
-          description: errorMessage,
+          description: error instanceof Error ? error.message : "Failed to analyze audio",
           variant: "destructive",
         });
-        
-        // Set status to show the error
-        setStatus(errorMessage);
-        setProgress(0); // Reset progress on error
+        setStatus("Analysis failed. Please try again.");
       }
     };
 
@@ -181,9 +209,14 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         <div className="space-y-3 text-center">
           <p className="text-sm text-muted-foreground">
             {progress < 40 
-              ? "Using AI to separate vocals from instrumentals" 
+              ? "Using AI to separate vocals from instrumentals (2-5 minutes for full songs)" 
               : "Analyzing vocals for explicit content in all languages"}
           </p>
+          {progress >= 10 && progress < 40 && (
+            <p className="text-xs text-accent animate-pulse">
+              Please wait... Processing can take several minutes for longer songs
+            </p>
+          )}
         </div>
       </div>
     </div>

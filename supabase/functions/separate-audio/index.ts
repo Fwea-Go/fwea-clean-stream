@@ -71,11 +71,18 @@ serve(async (req) => {
     const replicate = new Replicate({ auth: REPLICATE_API_KEY });
 
     console.log("[SEPARATE-AUDIO] Starting Spleeter separation...");
+    console.log("[SEPARATE-AUDIO] Audio URL:", urlData.publicUrl);
     
     // Use Spleeter for fast, high-quality source separation
     let output: any;
     try {
-      output = await replicate.run(
+      // Set a longer timeout for full-length songs (5 minutes)
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Audio separation timed out after 5 minutes')), 300000)
+      );
+
+      console.log("[SEPARATE-AUDIO] Starting Replicate job (this may take 2-5 minutes for longer songs)...");
+      const separationPromise = replicate.run(
         "soykertje/spleeter:cd128044253523c86abfd743dea680c88559ad975ccd72378c8433f067ab5d0a",
         {
           input: {
@@ -84,29 +91,78 @@ serve(async (req) => {
             audio_format: "mp3"
           }
         }
-      ) as any;
+      );
+
+      output = await Promise.race([separationPromise, timeoutPromise]) as any;
+      console.log("[SEPARATE-AUDIO] Separation completed successfully");
     } catch (replicateError: any) {
       console.error("[SEPARATE-AUDIO] Replicate API error:", replicateError);
+      console.error("[SEPARATE-AUDIO] Error details:", JSON.stringify(replicateError, null, 2));
+      
+      if (replicateError.message?.includes('timed out')) {
+        throw new Error("Audio separation is taking longer than expected. This can happen with very long songs (over 4 minutes). Please try with a shorter audio file.");
+      }
+      
       if (replicateError.response?.status === 402) {
         throw new Error("Replicate API requires payment. Please add credits at https://replicate.com/account/billing");
       }
-      throw new Error(`Replicate API error: ${replicateError.message || 'Unknown error'}`);
+      
+      if (replicateError.response?.status === 500) {
+        throw new Error("Replicate service error. Please try again in a few moments.");
+      }
+      
+      throw new Error(`Audio separation failed: ${replicateError.message || 'Unknown error'}. Try with a shorter audio file.`);
     }
 
-    console.log("[SEPARATE-AUDIO] Separation complete:", output);
+    if (!output || !output.vocals || !output.accompaniment) {
+      console.error("[SEPARATE-AUDIO] Invalid output from Spleeter:", output);
+      throw new Error("Audio separation failed - invalid output from AI model");
+    }
+
+    console.log("[SEPARATE-AUDIO] Separation complete:", {
+      hasVocals: !!output.vocals,
+      hasAccompaniment: !!output.accompaniment
+    });
 
     // Download separated stems from Spleeter
     // Spleeter returns: vocals and accompaniment
     const vocalsUrl = output.vocals;
     const accompanimentUrl = output.accompaniment;
 
-    console.log("[SEPARATE-AUDIO] Downloading vocals:", vocalsUrl);
-    const vocalsResponse = await fetch(vocalsUrl);
-    const vocalsBuffer = new Uint8Array(await vocalsResponse.arrayBuffer());
+    // Helper function to download with retry
+    async function downloadWithRetry(url: string, maxRetries = 3) {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`[SEPARATE-AUDIO] Download attempt ${attempt}/${maxRetries} from:`, url);
+          const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          return new Uint8Array(await response.arrayBuffer());
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          console.error(`[SEPARATE-AUDIO] Download attempt ${attempt} failed:`, errorMsg);
+          
+          if (attempt === maxRetries) {
+            throw new Error(`Failed to download after ${maxRetries} attempts: ${errorMsg}`);
+          }
+          
+          // Exponential backoff: 2s, 4s, 8s
+          const waitTime = Math.pow(2, attempt) * 1000;
+          console.log(`[SEPARATE-AUDIO] Retrying in ${waitTime}ms...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
+      throw new Error("Download failed");
+    }
 
-    console.log("[SEPARATE-AUDIO] Downloading accompaniment:", accompanimentUrl);
-    const accompanimentResponse = await fetch(accompanimentUrl);
-    const instrumentalBuffer = new Uint8Array(await accompanimentResponse.arrayBuffer());
+    console.log("[SEPARATE-AUDIO] Downloading vocals from:", vocalsUrl);
+    const vocalsBuffer = await downloadWithRetry(vocalsUrl);
+    console.log("[SEPARATE-AUDIO] Vocals downloaded, size:", vocalsBuffer.length, "bytes");
+
+    console.log("[SEPARATE-AUDIO] Downloading accompaniment from:", accompanimentUrl);
+    const instrumentalBuffer = await downloadWithRetry(accompanimentUrl);
+    console.log("[SEPARATE-AUDIO] Instrumental downloaded, size:", instrumentalBuffer.length, "bytes");
 
     // Store separated stems
     const vocalsPath = `${user.id}/stems/${fileName}-vocals.mp3`;
@@ -137,22 +193,11 @@ serve(async (req) => {
       .from("audio-files")
       .getPublicUrl(instrumentalPath);
 
-    // Check vocals size - if too large, reject immediately
-    const vocalsSizeMB = vocalsBuffer.length / (1024 * 1024);
-    console.log("[SEPARATE-AUDIO] Vocals size:", vocalsSizeMB.toFixed(2), "MB");
-    
-    if (vocalsSizeMB > 24) {
-      console.error("[SEPARATE-AUDIO] Vocals too large for Whisper API");
-      throw new Error(`Vocals file is too large (${vocalsSizeMB.toFixed(1)}MB). OpenAI Whisper supports files up to 25MB. Please try a shorter audio clip (under 2 minutes recommended).`);
-    }
-    
-    const analysisVocalsBuffer = vocalsBuffer;
-
-    // Store vocals for analysis
+    // Store vocals in storage for analysis (instead of base64)
     const vocalsAnalysisPath = `${user.id}/vocals/${fileName}-vocals.mp3`;
     await supabaseClient.storage
       .from("audio-files")
-      .upload(vocalsAnalysisPath, analysisVocalsBuffer, {
+      .upload(vocalsAnalysisPath, vocalsBuffer, {
         contentType: "audio/mpeg",
         upsert: true,
       });

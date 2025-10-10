@@ -15,12 +15,15 @@ type AppState = "hero" | "upload" | "analyzing" | "demo" | "results";
 const Index = () => {
   const [appState, setAppState] = useState<AppState>("hero");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [muteTimestamps, setMuteTimestamps] = useState<{ start: number; end: number; word: string }[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [shouldRender, setShouldRender] = useState(true);
   const { user, signOut, loading } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     // Check if we need to show results after analysis
-    const analysis = sessionStorage.getItem('audioAnalysis');
+    const analysis = sessionStorage.getItem("audioAnalysis");
     if (analysis && uploadedFile) {
       setAppState("results");
     }
@@ -35,10 +38,10 @@ const Index = () => {
   };
 
   const handleShowDemo = () => {
-    sessionStorage.removeItem('audioAnalysis');
-    sessionStorage.removeItem('vocalsUrl');
-    sessionStorage.removeItem('instrumentalUrl');
-    sessionStorage.removeItem('isDemo');
+    sessionStorage.removeItem("audioAnalysis");
+    sessionStorage.removeItem("vocalsUrl");
+    sessionStorage.removeItem("instrumentalUrl");
+    sessionStorage.removeItem("isDemo");
     setAppState("demo");
   };
 
@@ -46,20 +49,21 @@ const Index = () => {
     setAppState("results");
   };
 
-  const handleFileUpload = (file: File) => {
+  const handleFileUpload = async (file: File, instrumentalFile?: File | null) => {
     // Clear previous analysis data
-    sessionStorage.removeItem('audioAnalysis');
-    sessionStorage.removeItem('vocalsUrl');
-    sessionStorage.removeItem('instrumentalUrl');
+    sessionStorage.removeItem("audioAnalysis");
+    sessionStorage.removeItem("vocalsUrl");
+    sessionStorage.removeItem("instrumentalUrl");
+    sessionStorage.removeItem("isDemo");
     setUploadedFile(file);
     setAppState("analyzing");
   };
 
   const handleAnalyzeAnother = () => {
     // Clear all data and go back to upload
-    sessionStorage.removeItem('audioAnalysis');
-    sessionStorage.removeItem('vocalsUrl');
-    sessionStorage.removeItem('instrumentalUrl');
+    sessionStorage.removeItem("audioAnalysis");
+    sessionStorage.removeItem("vocalsUrl");
+    sessionStorage.removeItem("instrumentalUrl");
     setUploadedFile(null);
     setAppState("upload");
   };
@@ -83,18 +87,13 @@ const Index = () => {
     <main className="min-h-screen relative pb-16">
       {user && (
         <div className="absolute top-4 right-4 z-50">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={signOut}
-            className="gap-2"
-          >
+          <Button variant="outline" size="sm" onClick={signOut} className="gap-2">
             <LogOut className="h-4 w-4" />
             Sign Out
           </Button>
         </div>
       )}
-      
+
       {appState === "hero" && <Hero onGetStarted={handleGetStarted} onShowDemo={handleShowDemo} />}
       {appState === "upload" && <UploadZone onFileUpload={handleFileUpload} />}
       {appState === "analyzing" && uploadedFile && (
@@ -102,12 +101,14 @@ const Index = () => {
       )}
       {appState === "demo" && <DemoProgress onComplete={handleDemoComplete} />}
       {appState === "results" && (
-        <ResultsView 
-          fileName={uploadedFile?.name || "Demo Song"} 
-          onAnalyzeAnother={handleAnalyzeAnother} 
+        <ResultsView
+          fileName={uploadedFile?.name || "Demo Song"}
+          onAnalyzeAnother={handleAnalyzeAnother}
         />
       )}
-      
+
+      {errorMessage && <div className="text-red-500 text-center p-4">{errorMessage}</div>}
+
       <LanguageBanner />
     </main>
   );
