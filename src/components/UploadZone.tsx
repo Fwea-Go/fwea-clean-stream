@@ -17,6 +17,19 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
 
       const file = e.dataTransfer.files[0];
       if (file && file.type.startsWith("audio/")) {
+        // Check file size (max 8MB to ensure vocals stay under 25MB after separation)
+        const maxSizeMB = 8;
+        const fileSizeMB = file.size / (1024 * 1024);
+        
+        if (fileSizeMB > maxSizeMB) {
+          toast({
+            title: "File Too Large",
+            description: `Please upload a file smaller than ${maxSizeMB}MB. Your file is ${fileSizeMB.toFixed(1)}MB. Try a shorter audio clip (under 2 minutes recommended).`,
+            variant: "destructive",
+          });
+          return;
+        }
+        
         onFileUpload(file);
       } else {
         toast({
@@ -33,10 +46,24 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
+        // Check file size (max 8MB to ensure vocals stay under 25MB after separation)
+        const maxSizeMB = 8;
+        const fileSizeMB = file.size / (1024 * 1024);
+        
+        if (fileSizeMB > maxSizeMB) {
+          toast({
+            title: "File Too Large",
+            description: `Please upload a file smaller than ${maxSizeMB}MB. Your file is ${fileSizeMB.toFixed(1)}MB. Try a shorter audio clip (under 2 minutes recommended).`,
+            variant: "destructive",
+          });
+          e.target.value = ''; // Reset input
+          return;
+        }
+        
         onFileUpload(file);
       }
     },
-    [onFileUpload]
+    [onFileUpload, toast]
   );
 
   return (
@@ -97,7 +124,7 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
 
           <div className="mt-8 text-sm text-muted-foreground">
             <p>Supported formats: MP3, WAV, FLAC, OGG</p>
-            <p className="mt-1">Maximum file size: 100MB</p>
+            <p className="mt-1">Maximum file size: 8MB (≈2 minutes of audio)</p>
           </div>
         </div>
       </label>

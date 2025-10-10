@@ -130,12 +130,17 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
       } catch (error) {
         console.error("[AnalysisProgress] Error analyzing audio:", error);
+        const errorMessage = error instanceof Error ? error.message : "Failed to analyze audio";
+        
         toast({
           title: "Analysis Error",
-          description: error instanceof Error ? error.message : "Failed to analyze audio",
+          description: errorMessage,
           variant: "destructive",
         });
-        setStatus("Analysis failed. Please try again.");
+        
+        // Set status to show the error
+        setStatus(errorMessage);
+        setProgress(0); // Reset progress on error
       }
     };
 
