@@ -11,6 +11,11 @@ export const DemoProgress = ({ onComplete }: DemoProgressProps) => {
   const [status, setStatus] = useState("Uploading demo audio file...");
 
   useEffect(() => {
+    // Clear any previous real analysis data
+    sessionStorage.removeItem('audioAnalysis');
+    sessionStorage.removeItem('vocalsUrl');
+    sessionStorage.removeItem('instrumentalUrl');
+    
     const demoSteps = [
       { progress: 5, status: "Uploading demo audio file...", delay: 500 },
       { progress: 10, status: "Separating vocals from instrumentals...", delay: 2000 },

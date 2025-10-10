@@ -27,6 +27,12 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
       try {
         console.log("[AnalysisProgress] Starting analysis for file:", audioFile.name, "Size:", audioFile.size);
         
+        // Clear any previous demo or analysis data
+        sessionStorage.removeItem('isDemo');
+        sessionStorage.removeItem('audioAnalysis');
+        sessionStorage.removeItem('vocalsUrl');
+        sessionStorage.removeItem('instrumentalUrl');
+        
         // Get auth session
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
@@ -91,12 +97,33 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
         if (error) {
           console.error("[AnalysisProgress] Analysis error:", error);
-          throw new Error(error.message || "Failed to analyze audio");
+          const errorMsg = error.message || "Failed to analyze audio";
+          
+          // Check for specific error types
+          if (errorMsg.includes("Whisper API failed after")) {
+            throw new Error("OpenAI Whisper is temporarily unavailable. This is an OpenAI server issue - please try again in a few moments.");
+          }
+          
+          if (errorMsg.includes("too large")) {
+            throw new Error(errorMsg + " Try using a shorter audio clip (under 3 minutes recommended).");
+          }
+          
+          throw new Error(errorMsg);
         }
 
         if (!data || !data.success) {
           console.error("[AnalysisProgress] Analysis unsuccessful:", data);
-          throw new Error(data?.error || "Analysis failed");
+          const errorMsg = data?.error || "Analysis failed";
+          
+          if (errorMsg.includes("Whisper API") || errorMsg.includes("server_error")) {
+            throw new Error("OpenAI Whisper is temporarily unavailable. This is an OpenAI server issue - please try again in a few moments.");
+          }
+          
+          if (errorMsg.includes("too large")) {
+            throw new Error(errorMsg + " Try using a shorter audio clip (under 3 minutes recommended).");
+          }
+          
+          throw new Error(errorMsg);
         }
 
         console.log("[AnalysisProgress] Analysis successful:", {
@@ -119,15 +146,9 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
       } catch (error) {
         console.error("[AnalysisProgress] Error analyzing audio:", error);
-        
-        let errorMessage = "Failed to analyze audio";
-        if (error instanceof Error) {
-          errorMessage = error.message;
-        }
-        
         toast({
           title: "Analysis Error",
-          description: errorMessage,
+          description: error instanceof Error ? error.message : "Failed to analyze audio",
           variant: "destructive",
         });
         setStatus("Analysis failed. Please try again.");
