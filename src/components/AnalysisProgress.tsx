@@ -44,13 +44,8 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         setProgress(5);
         setStatus("Uploading audio file...");
 
-        // Sanitize filename to remove special characters that can cause storage issues
-        const sanitizedFileName = audioFile.name
-          .replace(/[^\w\s.-]/g, '') // Remove special chars except spaces, dots, dashes
-          .replace(/\s+/g, '_'); // Replace spaces with underscores
-
         // Upload file directly to storage
-        const storagePath = `${session.user.id}/uploads/${Date.now()}-${sanitizedFileName}`;
+        const storagePath = `${session.user.id}/uploads/${Date.now()}-${audioFile.name}`;
         const { error: uploadError } = await supabase.storage
           .from("audio-files")
           .upload(storagePath, audioFile, {
@@ -66,10 +61,9 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         console.log("[AnalysisProgress] File uploaded to:", storagePath);
 
         setProgress(10);
-        setStatus("Separating vocals from instrumentals (this may take 2-5 minutes)...");
+        setStatus("Separating vocals from instrumentals...");
 
         // Step 1: Separate audio into vocals and instrumental
-        // Note: This can take 2-5 minutes for full-length songs
         const { data: separationData, error: separationError } = await supabase.functions.invoke("separate-audio", {
           headers: {
             Authorization: `Bearer ${session.access_token}`,
@@ -86,7 +80,7 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
           
           // Provide helpful error messages
           if (errorMsg.includes('timed out') || errorMsg.includes('longer than expected')) {
-            throw new Error("Audio separation timed out. This usually happens with songs over 4 minutes. Please try with a shorter song or try again (sometimes it works on retry).");
+            throw new Error("Audio separation timed out. Please try with a shorter song (under 2 minutes recommended).");
           }
           
           if (errorMsg.includes('payment') || errorMsg.includes('credits')) {
@@ -209,14 +203,9 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         <div className="space-y-3 text-center">
           <p className="text-sm text-muted-foreground">
             {progress < 40 
-              ? "Using AI to separate vocals from instrumentals (2-5 minutes for full songs)" 
+              ? "Using AI to separate vocals from instrumentals" 
               : "Analyzing vocals for explicit content in all languages"}
           </p>
-          {progress >= 10 && progress < 40 && (
-            <p className="text-xs text-accent animate-pulse">
-              Please wait... Processing can take several minutes for longer songs
-            </p>
-          )}
         </div>
       </div>
     </div>
