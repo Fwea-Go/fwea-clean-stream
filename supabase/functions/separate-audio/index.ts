@@ -136,6 +136,56 @@ serve(async (req) => {
     const vocalsBuffer = new Uint8Array(await vocalsResponse.arrayBuffer());
     console.log("[SEPARATE-AUDIO] Vocals downloaded, size:", vocalsBuffer.length, "bytes");
 
+    // Check vocals size - if > 20MB, compress it for Whisper
+    const vocalsSizeMB = vocalsBuffer.length / (1024 * 1024);
+    let finalVocalsBuffer = vocalsBuffer;
+    
+    if (vocalsSizeMB > 20) {
+      console.log("[SEPARATE-AUDIO] Vocals too large, compressing...");
+      
+      // Store temporary vocals for compression
+      const tempVocalsPath = `${user.id}/temp/${fileName}-vocals-temp.mp3`;
+      await supabaseClient.storage
+        .from("audio-files")
+        .upload(tempVocalsPath, vocalsBuffer, {
+          contentType: "audio/mpeg",
+          upsert: true,
+        });
+      
+      const { data: tempVocalsUrl } = supabaseClient.storage
+        .from("audio-files")
+        .getPublicUrl(tempVocalsPath);
+      
+      // Compress using Replicate FFmpeg model
+      try {
+        const compressOutput: any = await replicate.run(
+          "sakemin/ffmpeg:1c5d7f820f96993f3ad52447f8b89bec3e1a707f2ccf1dc8d40af60ce05b2dcf",
+          {
+            input: {
+              audio: tempVocalsUrl.publicUrl,
+              output_format: "mp3",
+              audio_bitrate: "64k", // Lower bitrate for smaller file
+            }
+          }
+        );
+        
+        if (compressOutput) {
+          const compressedResponse = await fetch(compressOutput);
+          if (compressedResponse.ok) {
+            finalVocalsBuffer = new Uint8Array(await compressedResponse.arrayBuffer());
+            console.log("[SEPARATE-AUDIO] Compressed vocals size:", finalVocalsBuffer.length, "bytes");
+          }
+        }
+      } catch (compressError) {
+        console.error("[SEPARATE-AUDIO] Compression failed, using original:", compressError);
+      }
+      
+      // Clean up temp file
+      await supabaseClient.storage
+        .from("audio-files")
+        .remove([tempVocalsPath]);
+    }
+
     console.log("[SEPARATE-AUDIO] Downloading accompaniment from:", accompanimentUrl);
     const accompanimentResponse = await fetch(accompanimentUrl);
     if (!accompanimentResponse.ok) {
@@ -144,7 +194,7 @@ serve(async (req) => {
     const instrumentalBuffer = new Uint8Array(await accompanimentResponse.arrayBuffer());
     console.log("[SEPARATE-AUDIO] Instrumental downloaded, size:", instrumentalBuffer.length, "bytes");
 
-    // Store separated stems
+    // Store separated stems (use original vocals for playback)
     const vocalsPath = `${user.id}/stems/${fileName}-vocals.mp3`;
     const instrumentalPath = `${user.id}/stems/${fileName}-instrumental.mp3`;
 
@@ -173,11 +223,11 @@ serve(async (req) => {
       .from("audio-files")
       .getPublicUrl(instrumentalPath);
 
-    // Store vocals in storage for analysis (instead of base64)
+    // Store compressed vocals for analysis
     const vocalsAnalysisPath = `${user.id}/vocals/${fileName}-vocals.mp3`;
     await supabaseClient.storage
       .from("audio-files")
-      .upload(vocalsAnalysisPath, vocalsBuffer, {
+      .upload(vocalsAnalysisPath, finalVocalsBuffer, {
         contentType: "audio/mpeg",
         upsert: true,
       });

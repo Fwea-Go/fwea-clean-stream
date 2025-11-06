@@ -1,17 +1,20 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle2 } from "lucide-react";
+import { Loader2, CheckCircle2, ArrowLeft } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 
 interface AnalysisProgressProps {
   onComplete: () => void;
+  onCancel: () => void;
   audioFile: File | null;
 }
 
-export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProps) => {
+export const AnalysisProgress = ({ onComplete, onCancel, audioFile }: AnalysisProgressProps) => {
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("Uploading audio file...");
+  const [isCancelled, setIsCancelled] = useState(false);
 
   useEffect(() => {
     if (!audioFile) {
@@ -25,6 +28,8 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
     const analyzeAudio = async () => {
       try {
+        if (isCancelled) return;
+        
         console.log("[AnalysisProgress] Starting analysis for file:", audioFile.name, "Size:", audioFile.size);
         
         // Clear any previous demo or analysis data
@@ -41,6 +46,8 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
         console.log("[AnalysisProgress] Auth session found, uploading to storage");
 
+        if (isCancelled) return;
+        
         setProgress(5);
         setStatus("Uploading audio file...");
 
@@ -60,6 +67,8 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
         console.log("[AnalysisProgress] File uploaded to:", storagePath);
 
+        if (isCancelled) return;
+        
         setProgress(10);
         setStatus("Separating vocals from instrumentals...");
 
@@ -92,6 +101,8 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
 
         console.log("[AnalysisProgress] Audio separation complete");
 
+        if (isCancelled) return;
+        
         setProgress(40);
         setStatus("Analyzing vocals for explicit content...");
 
@@ -156,13 +167,19 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
         }, 1000);
 
       } catch (error) {
+        if (isCancelled) return;
+        
         console.error("[AnalysisProgress] Error analyzing audio:", error);
+        const errorMessage = error instanceof Error ? error.message : "Failed to analyze audio";
+        
         toast({
           title: "Analysis Error",
-          description: error instanceof Error ? error.message : "Failed to analyze audio",
+          description: errorMessage,
           variant: "destructive",
         });
-        setStatus("Analysis failed. Please try again.");
+        
+        setStatus(errorMessage);
+        setProgress(0);
       }
     };
 
@@ -171,12 +188,32 @@ export const AnalysisProgress = ({ onComplete, audioFile }: AnalysisProgressProp
       analyzeAudio();
     }, 500);
 
-    return () => clearTimeout(timer);
-  }, [audioFile, onComplete]);
+    return () => {
+      clearTimeout(timer);
+      setIsCancelled(true);
+    };
+  }, [audioFile, onComplete, isCancelled]);
+
+  const handleCancel = () => {
+    setIsCancelled(true);
+    onCancel();
+  };
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-20">
       <div className="glass-card rounded-2xl p-8 md:p-12 animate-slide-up">
+        <div className="flex items-center justify-between mb-8">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleCancel}
+            className="gap-2"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Cancel
+          </Button>
+        </div>
+        
         <div className="text-center mb-8">
           <h2 className="text-3xl font-bold mb-3">
             Analyzing Your <span className="text-primary neon-text">Audio</span>

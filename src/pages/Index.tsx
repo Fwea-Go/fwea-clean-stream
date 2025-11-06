@@ -98,7 +98,14 @@ const Index = () => {
       {appState === "hero" && <Hero onGetStarted={handleGetStarted} onShowDemo={handleShowDemo} />}
       {appState === "upload" && <UploadZone onFileUpload={handleFileUpload} />}
       {appState === "analyzing" && uploadedFile && (
-        <AnalysisProgress onComplete={handleAnalysisComplete} audioFile={uploadedFile} />
+        <AnalysisProgress
+          onComplete={handleAnalysisComplete}
+          onCancel={() => {
+            setAppState("upload");
+            setUploadedFile(null);
+          }}
+          audioFile={uploadedFile}
+        />
       )}
       {appState === "demo" && <DemoProgress onComplete={handleDemoComplete} />}
       {appState === "results" && (
