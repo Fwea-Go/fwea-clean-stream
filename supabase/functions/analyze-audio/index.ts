@@ -7,122 +7,16 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Enhanced explicit words detection using AI
-async function detectExplicitWords(words: any[], transcript: string) {
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-  if (!LOVABLE_API_KEY) {
-    console.warn("[ANALYZE-AUDIO] LOVABLE_API_KEY not set, using basic detection");
-    return basicDetection(words);
-  }
-
-  try {
-    console.log("[ANALYZE-AUDIO] Using AI for explicit content detection");
-    
-    const wordList = words.map((w: any, idx: number) => ({
-      index: idx,
-      word: w.word,
-      start: w.start,
-      end: w.end
-    }));
-
-    // FIXED: Use timeout and better error handling for AI gateway
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
-    try {
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [{
-            role: "system",
-            content: `You are a strict content moderator. Analyze the word list and return a JSON object with "explicit_indices" array containing indices of explicit/profane words.
-            
-EXPLICIT WORDS TO CATCH: fuck, shit, bitch, ass, damn, hell, dick, pussy, cunt, bastard, motherfucker, nigga, nigger, whore, slut, hoe, mierda, puta, joder, carajo, scheiße, fick, arsch, putain, merde, etc.
-
-Return ONLY valid JSON, no other text.`
-          }, {
-            role: "user",
-            content: `Transcript: "${transcript}"\n\nWord list:\n${JSON.stringify(wordList)}\n\nReturn: {"explicit_indices": [...]}`
-          }],
-          temperature: 0,
-          max_tokens: 500
-        }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("[ANALYZE-AUDIO] AI API error:", response.status, errorText);
-        return basicDetection(words);
-      }
-
-      const result = await response.json();
-      const aiResponse = JSON.parse(result.choices[0].message.content);
-      const explicitIndices = aiResponse.explicit_indices || [];
-      
-      console.log(`[ANALYZE-AUDIO] AI detected ${explicitIndices.length} explicit words`);
-
-      const explicitWords = explicitIndices.map((idx: number) => {
-        if (idx >= words.length) return null;
-        const wordData = words[idx];
-        return {
-          word: wordData.word,
-          start: wordData.start || 0,
-          end: wordData.end || 0,
-          language: "detected_by_ai",
-          confidence: 0.98,
-        };
-      }).filter(w => w !== null);
-
-      // Double-check with basic detection
-      const basicWords = basicDetection(words);
-      const basicWordsNotInAI = basicWords.filter((bw: any) => 
-        !explicitWords.some((ew: any) => ew.word === bw.word && Math.abs(ew.start - bw.start) < 0.1)
-      );
-      
-      if (basicWordsNotInAI.length > 0) {
-        console.log(`[ANALYZE-AUDIO] Basic detection added ${basicWordsNotInAI.length} words`);
-        explicitWords.push(...basicWordsNotInAI);
-      }
-
-      return explicitWords;
-    } catch (error) {
-      if (error.name === "AbortError") {
-        console.warn("[ANALYZE-AUDIO] AI request timed out, using basic detection");
-      } else {
-        console.error("[ANALYZE-AUDIO] AI detection error:", error);
-      }
-      return basicDetection(words);
-    }
-  } catch (error) {
-    console.error("[ANALYZE-AUDIO] Unexpected error in detectExplicitWords:", error);
-    return basicDetection(words);
-  }
-}
-
-// Fallback basic detection
+// Basic explicit words detection
 function basicDetection(words: any[]) {
   const EXPLICIT_WORDS = [
-    // English
     "fuck", "fucking", "fucked", "fucker", "fck", "fuk", "shit", "damn", "bitch", "bitches", 
     "ass", "asshole", "bastard", "hell", "crap", "dick", "cock", "pussy", "piss", "cunt", 
     "motherfucker", "bullshit", "nigga", "nigger", "whore", "slut", "hoe",
-    // Spanish
     "mierda", "puta", "puto", "carajo", "coño", "joder", "pendejo", "chinga", "verga", "perra",
-    // French
     "merde", "putain", "con", "connard", "salope", "bordel", "enculé",
-    // German
     "scheiße", "fick", "arsch", "verdammt", "hurensohn",
-    // Portuguese
     "porra", "caralho", "foda", "merda", "puta", "filho da puta",
-    // Italian
     "cazzo", "merda", "puttana", "stronzo", "vaffanculo",
   ];
 
@@ -130,7 +24,7 @@ function basicDetection(words: any[]) {
   for (const wordData of words) {
     const cleanWord = wordData.word.toLowerCase().trim().replace(/[.,!?;:"']/g, "");
     if (EXPLICIT_WORDS.includes(cleanWord)) {
-      console.log("[ANALYZE-AUDIO] Found explicit word:", cleanWord, "at", wordData.start);
+      console.log("[ANALYZE-AUDIO] Flagged:", cleanWord, "at", wordData.start);
       explicitWords.push({
         word: wordData.word,
         start: wordData.start || 0,
@@ -155,126 +49,133 @@ serve(async (req) => {
   );
 
   try {
-    console.log("[ANALYZE-AUDIO] Starting analysis");
+    console.log("[ANALYZE-AUDIO] Request started");
 
+    // Auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      throw new Error("No authorization header");
+      throw new Error("Missing Authorization header");
     }
 
     const token = authHeader.replace("Bearer ", "");
     const {  userData, error: userError } = await supabaseClient.auth.getUser(token);
+    
     if (userError || !userData.user) {
-      throw new Error("User not authenticated");
+      console.error("[ANALYZE-AUDIO] Auth failed:", userError);
+      throw new Error("Authentication failed");
     }
     
     const user = userData.user;
-    console.log("[ANALYZE-AUDIO] User authenticated:", user.id);
+    console.log("[ANALYZE-AUDIO] User OK:", user.id);
 
-    const { storagePath, fileName } = await req.json();
+    // Parse request
+    const body = await req.json();
+    const { storagePath, fileName } = body;
+    
     if (!storagePath || !fileName) {
-      throw new Error("Missing storage path or file name");
+      throw new Error("Missing storagePath or fileName");
     }
 
-    console.log("[ANALYZE-AUDIO] Processing file:", storagePath);
+    console.log("[ANALYZE-AUDIO] File:", storagePath);
 
-    // Download audio from storage
+    // Download from storage
+    console.log("[ANALYZE-AUDIO] Downloading audio...");
     const {  audioData, error: downloadError } = await supabaseClient.storage
       .from("audio-files")
       .download(storagePath);
 
     if (downloadError || !audioData) {
-      throw new Error(`Failed to download audio: ${downloadError?.message || 'No data'}`);
+      console.error("[ANALYZE-AUDIO] Download failed:", downloadError);
+      throw new Error(`Download error: ${downloadError?.message}`);
     }
 
     const bytes = new Uint8Array(await audioData.arrayBuffer());
     const fileSizeMB = bytes.length / (1024 * 1024);
-    console.log("[ANALYZE-AUDIO] File size:", fileSizeMB.toFixed(2), "MB");
+    
+    console.log("[ANALYZE-AUDIO] Downloaded:", fileSizeMB.toFixed(2), "MB");
 
     if (fileSizeMB > 24) {
-      throw new Error(`Audio file too large (${fileSizeMB.toFixed(1)}MB). Max: 25MB`);
+      throw new Error(`File too large: ${fileSizeMB.toFixed(1)}MB (max 25MB)`);
     }
 
-    // FIXED: Use direct binary upload instead of FormData
-    console.log("[ANALYZE-AUDIO] Calling Whisper API...");
+    // Call Whisper API using simple blob approach
+    console.log("[ANALYZE-AUDIO] Calling Whisper...");
     
-    const whisperController = new AbortController();
-    const whisperTimeout = setTimeout(() => whisperController.abort(), 120000); // 2 min timeout
+    const openaiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openaiKey) {
+      throw new Error("OPENAI_API_KEY not set");
+    }
 
-    let whisperResponse;
+    let transcription;
     let lastError;
 
+    // Retry logic
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         console.log(`[ANALYZE-AUDIO] Whisper attempt ${attempt}/3`);
 
-        // FIXED: Use multipart/form-data with proper boundary
-        const boundary = `----FormBoundary${Date.now()}`;
-        const body = [
-          `--${boundary}`,
-          `Content-Disposition: form-data; name="file"; filename="audio.mp3"`,
-          `Content-Type: audio/mpeg`,
-          ``,
-          // This is tricky - we need to append binary data
-          // For Deno, use a different approach:
-        ];
+        // Create a simple blob and send as-is
+        const blob = new Blob([bytes], { type: "audio/mpeg" });
+        
+        // Build formdata manually with proper encoding
+        const formData = new FormData();
+        formData.append("file", blob, "audio.mp3");
+        formData.append("model", "whisper-1");
+        formData.append("response_format", "verbose_json");
+        formData.append("timestamp_granularities[]", "word");
 
-        // SIMPLER FIX: Create FormData-like structure manually
-        const parts = [];
-        parts.push(new TextEncoder().encode(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.mp3"\r\nContent-Type: audio/mpeg\r\n\r\n`));
-        parts.push(bytes);
-        parts.push(new TextEncoder().encode(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n--${boundary}\r\nContent-Disposition: form-data; name="response_format"\r\n\r\nverbose_json\r\n--${boundary}\r\nContent-Disposition: form-data; name="timestamp_granularities[]"\r\n\r\nword\r\n--${boundary}--\r\n`));
-
-        const bodyData = await concatUint8Arrays(parts);
-
-        whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
-            "Content-Type": `multipart/form-data; boundary=${boundary}`,
+            "Authorization": `Bearer ${openaiKey}`,
           },
-          body: bodyData,
-          signal: whisperController.signal
+          body: formData,
         });
 
-        console.log("[ANALYZE-AUDIO] Whisper status:", whisperResponse.status);
+        console.log("[ANALYZE-AUDIO] Whisper response:", response.status);
 
-        if (whisperResponse.ok) {
-          break;
+        if (!response.ok) {
+          const error = await response.text();
+          console.error("[ANALYZE-AUDIO] Whisper error:", error);
+          
+          if (response.status >= 500 && attempt < 3) {
+            lastError = error;
+            await new Promise(r => setTimeout(r, 2000 * attempt));
+            continue;
+          }
+          throw new Error(error);
         }
 
-        const errorText = await whisperResponse.text();
-        console.error(`[ANALYZE-AUDIO] Whisper error attempt ${attempt}:`, errorText);
-        
-        if (whisperResponse.status >= 500 && attempt < 3) {
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-          continue;
-        }
+        transcription = await response.json();
+        console.log("[ANALYZE-AUDIO] Whisper OK, text:", transcription.text?.length, "chars");
+        break;
 
-        throw new Error(errorText);
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
-        if (attempt === 3) throw error;
+        console.error(`[ANALYZE-AUDIO] Attempt ${attempt} failed:`, lastError);
+        
+        if (attempt === 3) {
+          throw new Error(`Whisper failed after 3 attempts: ${lastError}`);
+        }
+        
+        await new Promise(r => setTimeout(r, 2000 * attempt));
       }
     }
 
-    clearTimeout(whisperTimeout);
-
-    if (!whisperResponse?.ok) {
-      throw new Error(`Whisper failed: ${lastError}`);
+    if (!transcription) {
+      throw new Error("No transcription result");
     }
-
-    const transcription = await whisperResponse.json();
-    console.log("[ANALYZE-AUDIO] Transcription done, text length:", transcription.text?.length);
 
     // Detect explicit words
-    let explicitWords = [];
-    if (transcription.words?.length > 0) {
-      console.log("[ANALYZE-AUDIO] Processing", transcription.words.length, "words");
-      explicitWords = await detectExplicitWords(transcription.words, transcription.text);
-    }
+    console.log("[ANALYZE-AUDIO] Detecting explicit content...");
+    const explicitWords = transcription.words?.length > 0 
+      ? basicDetection(transcription.words)
+      : [];
+
+    console.log("[ANALYZE-AUDIO] Found", explicitWords.length, "explicit words");
 
     // Store in database
+    console.log("[ANALYZE-AUDIO] Saving to database...");
     const {  analysisData, error: insertError } = await supabaseClient
       .from("audio_analyses")
       .insert({
@@ -288,9 +189,12 @@ serve(async (req) => {
       .select()
       .single();
 
-    if (insertError) throw insertError;
+    if (insertError) {
+      console.error("[ANALYZE-AUDIO] DB error:", insertError);
+      throw insertError;
+    }
 
-    console.log("[ANALYZE-AUDIO] Success! Analysis ID:", analysisData.id);
+    console.log("[ANALYZE-AUDIO] SUCCESS! ID:", analysisData.id);
 
     return new Response(
       JSON.stringify({
@@ -298,21 +202,22 @@ serve(async (req) => {
         analysisId: analysisData.id,
         transcript: transcription.text,
         explicitWords: explicitWords,
-        language: transcription.language,
-        duration: transcription.duration,
+        language: transcription.language || "unknown",
+        duration: transcription.duration || 0,
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       }
     );
+
   } catch (error) {
-    console.error("[ANALYZE-AUDIO] Fatal error:", error);
+    console.error("[ANALYZE-AUDIO] ERROR:", error);
+    
     return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: error instanceof Error ? error.message : "Unknown error",
-        timestamp: new Date().toISOString()
+      JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -321,15 +226,3 @@ serve(async (req) => {
     );
   }
 });
-
-// Helper function
-async function concatUint8Arrays(arrays: Uint8Array[]): Promise<Uint8Array> {
-  const totalLength = arrays.reduce((acc, arr) => acc + arr.length, 0);
-  const result = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const arr of arrays) {
-    result.set(arr, offset);
-    offset += arr.length;
-  }
-  return result;
-}
