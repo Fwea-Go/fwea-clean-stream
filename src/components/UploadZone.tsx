@@ -16,15 +16,38 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
       setIsDragging(false);
 
       const file = e.dataTransfer.files[0];
-      if (file && file.type.startsWith("audio/")) {
-        onFileUpload(file);
-      } else {
+      if (!file) return;
+      
+      if (!file.type.startsWith("audio/")) {
         toast({
           title: "Invalid file type",
           description: "Please upload an audio file (MP3, WAV, etc.)",
           variant: "destructive",
         });
+        return;
       }
+      
+      // Check file size
+      const fileSizeMB = file.size / (1024 * 1024);
+      if (fileSizeMB > 100) {
+        toast({
+          title: "File too large",
+          description: `File size is ${fileSizeMB.toFixed(1)}MB. Maximum is 100MB.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Warning for large files
+      if (fileSizeMB > 50) {
+        toast({
+          title: "Large file detected",
+          description: "Large files may take longer to process. Consider using a shorter clip (2-3 minutes) for best results.",
+          variant: "default",
+        });
+      }
+      
+      onFileUpload(file);
     },
     [onFileUpload, toast]
   );
@@ -33,10 +56,30 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
+        // Check file size (100MB limit as stated in UI)
+        const fileSizeMB = file.size / (1024 * 1024);
+        if (fileSizeMB > 100) {
+          toast({
+            title: "File too large",
+            description: `File size is ${fileSizeMB.toFixed(1)}MB. Maximum is 100MB.`,
+            variant: "destructive",
+          });
+          return;
+        }
+        
+        // Warning for large files that might have issues
+        if (fileSizeMB > 50) {
+          toast({
+            title: "Large file detected",
+            description: "Large files may take longer to process and could exceed analysis limits. Consider using a shorter clip (2-3 minutes) for best results.",
+            variant: "default",
+          });
+        }
+        
         onFileUpload(file);
       }
     },
-    [onFileUpload]
+    [onFileUpload, toast]
   );
 
   return (
@@ -97,7 +140,7 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
 
           <div className="mt-8 text-sm text-muted-foreground">
             <p>Supported formats: MP3, WAV, FLAC, OGG</p>
-            <p className="mt-1">Maximum file size: 100MB</p>
+            <p className="mt-1">Max file size: 100MB • Recommended: 2-3 minute clips</p>
           </div>
         </div>
       </label>
