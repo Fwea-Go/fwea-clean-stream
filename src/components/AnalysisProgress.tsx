@@ -26,9 +26,11 @@ export const AnalysisProgress = ({ onComplete, onCancel, audioFile }: AnalysisPr
       return;
     }
 
+    let mounted = true;
+
     const analyzeAudio = async () => {
       try {
-        if (isCancelled) return;
+        if (isCancelled || !mounted) return;
         
         console.log("[AnalysisProgress] Starting analysis for file:", audioFile.name, "Size:", audioFile.size);
         
@@ -46,7 +48,7 @@ export const AnalysisProgress = ({ onComplete, onCancel, audioFile }: AnalysisPr
 
         console.log("[AnalysisProgress] Auth session found, uploading to storage");
 
-        if (isCancelled) return;
+        if (isCancelled || !mounted) return;
         
         setProgress(5);
         setStatus("Uploading audio file...");
@@ -67,7 +69,7 @@ export const AnalysisProgress = ({ onComplete, onCancel, audioFile }: AnalysisPr
 
         console.log("[AnalysisProgress] File uploaded to:", storagePath);
 
-        if (isCancelled) return;
+        if (isCancelled || !mounted) return;
         
         setProgress(10);
         setStatus("Separating vocals from instrumentals...");
@@ -101,7 +103,7 @@ export const AnalysisProgress = ({ onComplete, onCancel, audioFile }: AnalysisPr
 
         console.log("[AnalysisProgress] Audio separation complete");
 
-        if (isCancelled) return;
+        if (isCancelled || !mounted) return;
         
         setProgress(40);
         setStatus("Analyzing vocals for explicit content...");
@@ -167,7 +169,7 @@ export const AnalysisProgress = ({ onComplete, onCancel, audioFile }: AnalysisPr
         }, 1000);
 
       } catch (error) {
-        if (isCancelled) return;
+        if (isCancelled || !mounted) return;
         
         console.error("[AnalysisProgress] Error analyzing audio:", error);
         const errorMessage = error instanceof Error ? error.message : "Failed to analyze audio";
@@ -189,8 +191,8 @@ export const AnalysisProgress = ({ onComplete, onCancel, audioFile }: AnalysisPr
     }, 500);
 
     return () => {
+      mounted = false;
       clearTimeout(timer);
-      setIsCancelled(true);
     };
   }, [audioFile, onComplete, isCancelled]);
 

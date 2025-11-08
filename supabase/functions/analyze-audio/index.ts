@@ -58,9 +58,9 @@ serve(async (req) => {
     }
 
     const token = authHeader.replace("Bearer ", "");
-    const {  userData, error: userError } = await supabaseClient.auth.getUser(token);
+    const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
     
-    if (userError || !userData.user) {
+    if (userError || !userData?.user) {
       console.error("[ANALYZE-AUDIO] Auth failed:", userError);
       throw new Error("Authentication failed");
     }
