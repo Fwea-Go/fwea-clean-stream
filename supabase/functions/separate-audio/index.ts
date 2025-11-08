@@ -163,12 +163,12 @@ serve(async (req) => {
         // Use FFmpeg via Replicate to convert WAV to MP3 with low bitrate
         console.log("[SEPARATE-AUDIO] Converting WAV to MP3 (64kbps)...");
         const mp3Output: any = await replicate.run(
-          "pollinations/audio-conversion",
+          "myaiteam2/bitrate-changer",
           {
             input: {
               audio: tempWavUrl.publicUrl,
-              output_format: "mp3",
-              bitrate: "64k"
+              bitrate: "64k",
+              format: "mp3"
             }
           }
         );
