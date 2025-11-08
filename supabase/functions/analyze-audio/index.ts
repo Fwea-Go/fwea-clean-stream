@@ -80,7 +80,7 @@ serve(async (req) => {
 
     // Download from storage
     console.log("[ANALYZE-AUDIO] Downloading audio...");
-    const {  audioData, error: downloadError } = await supabaseClient.storage
+    const { data: audioData, error: downloadError } = await supabaseClient.storage
       .from("audio-files")
       .download(storagePath);
 
@@ -176,7 +176,7 @@ serve(async (req) => {
 
     // Store in database
     console.log("[ANALYZE-AUDIO] Saving to database...");
-    const {  analysisData, error: insertError } = await supabaseClient
+    const { data: analysisData, error: insertError } = await supabaseClient
       .from("audio_analyses")
       .insert({
         user_id: user.id,
