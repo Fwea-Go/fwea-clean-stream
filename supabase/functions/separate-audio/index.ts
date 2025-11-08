@@ -136,55 +136,16 @@ serve(async (req) => {
     const vocalsBuffer = new Uint8Array(await vocalsResponse.arrayBuffer());
     console.log("[SEPARATE-AUDIO] Vocals downloaded, size:", vocalsBuffer.length, "bytes");
 
-    // Check vocals size - if > 20MB, compress it for Whisper
+    // Check vocals size - Whisper has a 25MB limit
     const vocalsSizeMB = vocalsBuffer.length / (1024 * 1024);
-    let finalVocalsBuffer = vocalsBuffer;
-    
-    if (vocalsSizeMB > 20) {
-      console.log("[SEPARATE-AUDIO] Vocals too large, compressing...");
-      
-      // Store temporary vocals for compression
-      const tempVocalsPath = `${user.id}/temp/${fileName}-vocals-temp.mp3`;
-      await supabaseClient.storage
-        .from("audio-files")
-        .upload(tempVocalsPath, vocalsBuffer, {
-          contentType: "audio/mpeg",
-          upsert: true,
-        });
-      
-      const { data: tempVocalsUrl } = supabaseClient.storage
-        .from("audio-files")
-        .getPublicUrl(tempVocalsPath);
-      
-      // Compress using Replicate FFmpeg model
-      try {
-        const compressOutput: any = await replicate.run(
-          "sakemin/ffmpeg:1c5d7f820f96993f3ad52447f8b89bec3e1a707f2ccf1dc8d40af60ce05b2dcf",
-          {
-            input: {
-              audio: tempVocalsUrl.publicUrl,
-              output_format: "mp3",
-              audio_bitrate: "64k", // Lower bitrate for smaller file
-            }
-          }
-        );
-        
-        if (compressOutput) {
-          const compressedResponse = await fetch(compressOutput);
-          if (compressedResponse.ok) {
-            finalVocalsBuffer = new Uint8Array(await compressedResponse.arrayBuffer());
-            console.log("[SEPARATE-AUDIO] Compressed vocals size:", finalVocalsBuffer.length, "bytes");
-          }
-        }
-      } catch (compressError) {
-        console.error("[SEPARATE-AUDIO] Compression failed, using original:", compressError);
-      }
-      
-      // Clean up temp file
-      await supabaseClient.storage
-        .from("audio-files")
-        .remove([tempVocalsPath]);
+    if (vocalsSizeMB > 24) {
+      throw new Error(
+        `Vocals track is ${vocalsSizeMB.toFixed(1)}MB, which exceeds the 25MB limit for analysis. ` +
+        `Please use a shorter audio file (recommend under 3 minutes) or a lower quality audio file.`
+      );
     }
+    
+    console.log("[SEPARATE-AUDIO] Vocals size OK:", vocalsSizeMB.toFixed(1), "MB");
 
     console.log("[SEPARATE-AUDIO] Downloading accompaniment from:", accompanimentUrl);
     const accompanimentResponse = await fetch(accompanimentUrl);
@@ -223,12 +184,12 @@ serve(async (req) => {
       .from("audio-files")
       .getPublicUrl(instrumentalPath);
 
-    // Store compressed vocals for analysis
+    // Store vocals for analysis
     const vocalsAnalysisPath = `${user.id}/vocals/${fileName}-vocals.mp3`;
     console.log("[SEPARATE-AUDIO] Storing vocals for analysis at:", vocalsAnalysisPath);
     const { error: vocalsUploadError } = await supabaseClient.storage
       .from("audio-files")
-      .upload(vocalsAnalysisPath, finalVocalsBuffer, {
+      .upload(vocalsAnalysisPath, vocalsBuffer, {
         contentType: "audio/mpeg",
         upsert: true,
       });
