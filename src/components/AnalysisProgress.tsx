@@ -90,9 +90,10 @@ export const AnalysisProgress = ({ onComplete, onCancel, audioFile }: AnalysisPr
           const errorMsg = separationData?.error || separationError?.message || "Failed to separate audio";
           
           // Provide helpful error messages
-          if (errorMsg.includes('too long for analysis') || errorMsg.includes('exceeds the 25MB')) {
+          if (errorMsg.includes('too long') || errorMsg.includes('exceed') || errorMsg.includes('25MB')) {
             throw new Error(
-              "Audio file too large - vocals exceed 25MB limit. Please use a shorter clip (2-3 minutes), lower quality audio (128kbps), or trim to just the section you want analyzed."
+              "This audio file is too long for analysis. After separating vocals, the file exceeds the 25MB processing limit. " +
+              "You must use a shorter clip (2-3 minutes maximum) or lower quality audio."
             );
           }
           
