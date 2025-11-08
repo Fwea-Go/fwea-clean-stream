@@ -79,14 +79,19 @@ serve(async (req) => {
     console.log("[ANALYZE-AUDIO] File:", storagePath);
 
     // Download from storage
-    console.log("[ANALYZE-AUDIO] Downloading audio...");
+    console.log("[ANALYZE-AUDIO] Downloading audio from:", storagePath);
     const { data: audioData, error: downloadError } = await supabaseClient.storage
       .from("audio-files")
       .download(storagePath);
 
-    if (downloadError || !audioData) {
-      console.error("[ANALYZE-AUDIO] Download failed:", downloadError);
-      throw new Error(`Download error: ${downloadError?.message}`);
+    if (downloadError) {
+      console.error("[ANALYZE-AUDIO] Download error:", downloadError);
+      throw new Error(`Failed to download audio: ${downloadError.message || JSON.stringify(downloadError)}`);
+    }
+    
+    if (!audioData) {
+      console.error("[ANALYZE-AUDIO] No audio data returned");
+      throw new Error(`File not found at path: ${storagePath}`);
     }
 
     const bytes = new Uint8Array(await audioData.arrayBuffer());

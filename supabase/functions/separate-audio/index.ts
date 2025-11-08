@@ -225,12 +225,19 @@ serve(async (req) => {
 
     // Store compressed vocals for analysis
     const vocalsAnalysisPath = `${user.id}/vocals/${fileName}-vocals.mp3`;
-    await supabaseClient.storage
+    console.log("[SEPARATE-AUDIO] Storing vocals for analysis at:", vocalsAnalysisPath);
+    const { error: vocalsUploadError } = await supabaseClient.storage
       .from("audio-files")
       .upload(vocalsAnalysisPath, finalVocalsBuffer, {
         contentType: "audio/mpeg",
         upsert: true,
       });
+    
+    if (vocalsUploadError) {
+      console.error("[SEPARATE-AUDIO] Failed to upload vocals for analysis:", vocalsUploadError);
+      throw new Error(`Failed to store vocals for analysis: ${vocalsUploadError.message}`);
+    }
+    console.log("[SEPARATE-AUDIO] Vocals stored successfully for analysis");
 
     // Clean up uploaded file
     await supabaseClient.storage
