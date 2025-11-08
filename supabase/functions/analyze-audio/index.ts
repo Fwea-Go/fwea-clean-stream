@@ -99,16 +99,12 @@ serve(async (req) => {
     
     console.log("[ANALYZE-AUDIO] Downloaded:", fileSizeMB.toFixed(2), "MB");
 
-    if (fileSizeMB > 24) {
-      throw new Error(`File too large: ${fileSizeMB.toFixed(1)}MB (max 25MB)`);
-    }
-
-    // Call Whisper API using simple blob approach
-    console.log("[ANALYZE-AUDIO] Calling Whisper...");
+    // Call Deepgram API (no file size limit)
+    console.log("[ANALYZE-AUDIO] Calling Deepgram...");
     
-    const openaiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!openaiKey) {
-      throw new Error("OPENAI_API_KEY not set");
+    const deepgramKey = Deno.env.get("DEEPGRAM_API_KEY");
+    if (!deepgramKey) {
+      throw new Error("DEEPGRAM_API_KEY not set");
     }
 
     let transcription;
@@ -117,31 +113,25 @@ serve(async (req) => {
     // Retry logic
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        console.log(`[ANALYZE-AUDIO] Whisper attempt ${attempt}/3`);
+        console.log(`[ANALYZE-AUDIO] Deepgram attempt ${attempt}/3`);
 
-        // Create a simple blob and send as-is
-        const blob = new Blob([bytes], { type: "audio/mpeg" });
-        
-        // Build formdata manually with proper encoding
-        const formData = new FormData();
-        formData.append("file", blob, "audio.mp3");
-        formData.append("model", "whisper-1");
-        formData.append("response_format", "verbose_json");
-        formData.append("timestamp_granularities[]", "word");
+        const response = await fetch(
+          "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true&utterances=false",
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Token ${deepgramKey}`,
+              "Content-Type": "audio/mpeg",
+            },
+            body: bytes,
+          }
+        );
 
-        const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${openaiKey}`,
-          },
-          body: formData,
-        });
-
-        console.log("[ANALYZE-AUDIO] Whisper response:", response.status);
+        console.log("[ANALYZE-AUDIO] Deepgram response:", response.status);
 
         if (!response.ok) {
           const error = await response.text();
-          console.error("[ANALYZE-AUDIO] Whisper error:", error);
+          console.error("[ANALYZE-AUDIO] Deepgram error:", error);
           
           if (response.status >= 500 && attempt < 3) {
             lastError = error;
@@ -151,8 +141,28 @@ serve(async (req) => {
           throw new Error(error);
         }
 
-        transcription = await response.json();
-        console.log("[ANALYZE-AUDIO] Whisper OK, text:", transcription.text?.length, "chars");
+        const deepgramResult = await response.json();
+        
+        // Convert Deepgram response to Whisper-like format
+        const channel = deepgramResult.results?.channels?.[0];
+        const alternative = channel?.alternatives?.[0];
+        
+        if (!alternative) {
+          throw new Error("No transcription in Deepgram response");
+        }
+
+        transcription = {
+          text: alternative.transcript,
+          words: alternative.words?.map((w: any) => ({
+            word: w.word,
+            start: w.start,
+            end: w.end,
+          })) || [],
+          language: deepgramResult.results?.channels?.[0]?.detected_language || "unknown",
+          duration: deepgramResult.metadata?.duration || 0,
+        };
+
+        console.log("[ANALYZE-AUDIO] Deepgram OK, text:", transcription.text?.length, "chars");
         break;
 
       } catch (error) {
@@ -160,7 +170,7 @@ serve(async (req) => {
         console.error(`[ANALYZE-AUDIO] Attempt ${attempt} failed:`, lastError);
         
         if (attempt === 3) {
-          throw new Error(`Whisper failed after 3 attempts: ${lastError}`);
+          throw new Error(`Deepgram failed after 3 attempts: ${lastError}`);
         }
         
         await new Promise(r => setTimeout(r, 2000 * attempt));

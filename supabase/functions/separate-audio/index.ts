@@ -136,17 +136,9 @@ serve(async (req) => {
     const vocalsBuffer = new Uint8Array(await vocalsResponse.arrayBuffer());
     console.log("[SEPARATE-AUDIO] Vocals downloaded, size:", vocalsBuffer.length, "bytes");
 
-    // Check vocals size - Whisper has a 25MB limit
+    // Deepgram has no file size limit, so we can handle any size
     const vocalsSizeMB = vocalsBuffer.length / (1024 * 1024);
-    console.log("[SEPARATE-AUDIO] Vocals size:", vocalsSizeMB.toFixed(1), "MB");
-    
-    if (vocalsSizeMB > 24) {
-      console.error("[SEPARATE-AUDIO] Vocals exceed 25MB limit");
-      throw new Error(
-        `Audio file too long - vocals are ${vocalsSizeMB.toFixed(1)}MB (limit: 25MB). ` +
-        `Please upload a shorter clip (2-3 minutes max recommended) or lower quality audio (128kbps or less).`
-      );
-    }
+    console.log("[SEPARATE-AUDIO] Vocals size:", vocalsSizeMB.toFixed(1), "MB (no size limit with Deepgram)");
     
     const finalVocalsBuffer = vocalsBuffer;
 
