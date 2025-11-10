@@ -7,7 +7,141 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Basic explicit words detection
+// AI-powered profanity detection using Lovable AI
+async function aiProfanityDetection(words: any[], transcript: string) {
+  const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
+  if (!lovableApiKey) {
+    console.warn("[ANALYZE-AUDIO] LOVABLE_API_KEY not set, falling back to basic detection");
+    return basicDetection(words);
+  }
+
+  try {
+    console.log("[ANALYZE-AUDIO] Using AI-powered profanity detection...");
+    
+    // Create a word map for quick lookup
+    const wordMap = words.map((w, idx) => ({
+      index: idx,
+      word: w.word,
+      start: w.start,
+      end: w.end,
+    }));
+
+    const prompt = `You are an expert profanity detection system. Analyze the following transcript and identify ALL explicit content, including:
+- Standard profanity and curse words
+- Slang and informal explicit terms
+- Regional and dialect-specific explicit language
+- Sexual references and innuendo
+- Hate speech and slurs
+- Drug references when explicit
+- Abbreviated or censored profanity (e.g., "fck", "sh*t", "a$$")
+- Any other content that would require censoring for radio/clean versions
+
+Be extremely thorough and catch even subtle or niche explicit terms across all languages and cultures.
+
+Transcript:
+${transcript}
+
+Word timing data (word index, word, start time, end time):
+${wordMap.slice(0, 1000).map(w => `${w.index}: "${w.word}" (${w.start.toFixed(2)}s - ${w.end.toFixed(2)}s)`).join('\n')}
+
+Return the indices of ALL words that contain explicit content. Be aggressive - when in doubt, flag it.`;
+
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${lovableApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-5",
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert profanity detection system that identifies explicit content with extremely high precision. You catch all forms of profanity including slang, regional variations, subtle references, and abbreviated curse words. You prioritize catching ALL explicit content over avoiding false positives."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "report_explicit_words",
+              description: "Report all explicit words found in the transcript",
+              parameters: {
+                type: "object",
+                properties: {
+                  explicit_word_indices: {
+                    type: "array",
+                    items: { type: "number" },
+                    description: "Array of word indices that contain explicit content"
+                  },
+                  confidence_scores: {
+                    type: "array",
+                    items: { type: "number" },
+                    description: "Confidence score (0-1) for each detected word"
+                  }
+                },
+                required: ["explicit_word_indices", "confidence_scores"],
+                additionalProperties: false
+              }
+            }
+          }
+        ],
+        tool_choice: { type: "function", function: { name: "report_explicit_words" } },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[ANALYZE-AUDIO] AI detection error:", response.status, errorText);
+      return basicDetection(words);
+    }
+
+    const data = await response.json();
+    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+    
+    if (!toolCall) {
+      console.warn("[ANALYZE-AUDIO] No tool call in AI response, falling back to basic detection");
+      return basicDetection(words);
+    }
+
+    const result = JSON.parse(toolCall.function.arguments);
+    const explicitIndices = result.explicit_word_indices || [];
+    const confidenceScores = result.confidence_scores || [];
+
+    console.log(`[ANALYZE-AUDIO] AI detected ${explicitIndices.length} explicit words`);
+
+    // Map indices back to words with timestamps
+    const detectedWords = explicitIndices.map((idx: number, i: number) => {
+      const word = words[idx];
+      if (!word) {
+        console.warn(`[ANALYZE-AUDIO] Word index ${idx} not found`);
+        return null;
+      }
+      
+      console.log("[ANALYZE-AUDIO] AI Flagged:", word.word, "at", word.start);
+      
+      return {
+        word: word.word,
+        start: word.start,
+        end: word.end,
+        confidence: confidenceScores[i] || 0.95,
+        language: "ai-detected",
+      };
+    }).filter((w: any) => w !== null);
+
+    return detectedWords;
+
+  } catch (error) {
+    console.error("[ANALYZE-AUDIO] AI detection failed:", error);
+    return basicDetection(words);
+  }
+}
+
+// Fallback basic detection (used if AI fails)
 function basicDetection(words: any[]) {
   const EXPLICIT_WORDS = [
     "fuck", "fucking", "fucked", "fucker", "fck", "fuk", "shit", "damn", "bitch", "bitches", 
@@ -181,10 +315,10 @@ serve(async (req) => {
       throw new Error("No transcription result");
     }
 
-    // Detect explicit words
-    console.log("[ANALYZE-AUDIO] Detecting explicit content...");
+    // Detect explicit words with AI
+    console.log("[ANALYZE-AUDIO] Detecting explicit content with AI...");
     const explicitWords = transcription.words?.length > 0 
-      ? basicDetection(transcription.words)
+      ? await aiProfanityDetection(transcription.words, transcription.text)
       : [];
 
     console.log("[ANALYZE-AUDIO] Found", explicitWords.length, "explicit words");
