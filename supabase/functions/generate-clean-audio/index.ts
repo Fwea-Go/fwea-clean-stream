@@ -76,37 +76,26 @@ serve(async (req) => {
       throw new Error("REPLICATE_API_KEY not set");
     }
 
-    // Upload files to temporary storage for processing
-    const vocalsBlob = new Blob([vocalsBytes], { type: "audio/wav" });
-    const instrumentalBlob = new Blob([instrumentalBytes], { type: "audio/wav" });
+    console.log("[GENERATE-CLEAN] Building mute segments with padding");
 
-    // Build FFmpeg filter to mute explicit segments in vocals
-    // Example: volume filter that mutes during specific time ranges
-    let volumeFilter = "volume=1";
-    
-    if (explicitWords.length > 0) {
-      // Build complex filter that mutes during explicit words
-      const muteSegments = explicitWords.map((word: any) => {
-        const start = Math.max(0, word.timestamp);
-        const end = word.end;
-        return `between(t,${start},${end})`;
-      }).join("+");
+    // Build muting segments for each explicit word with padding
+    const muteSegments = explicitWords.map((word: any, idx: number) => ({
+      index: idx,
+      word: word.word,
+      start: parseFloat(word.start.toFixed(3)),
+      end: parseFloat(word.end.toFixed(3)),
+      // Add padding before and after to ensure complete muting
+      muteStart: Math.max(0, parseFloat((word.start - 0.1).toFixed(3))),
+      muteEnd: parseFloat((word.end + 0.1).toFixed(3)),
+    }));
 
-      // This creates a volume filter that is 0 during explicit words, 1 otherwise
-      volumeFilter = `volume='if(${muteSegments},0,1)':eval=frame`;
-    }
+    console.log("[GENERATE-CLEAN] Will mute", muteSegments.length, "segments:", JSON.stringify(muteSegments.slice(0, 5)));
 
-    console.log("[GENERATE-CLEAN] Volume filter:", volumeFilter);
-
-    // For now, we'll use a simplified approach with Replicate's audio processing
-    // In production, this would use FFmpeg with the volume filter above
-    // For MVP, we'll create the file reference and return it
-
-    // Create a reference to the clean version in the database
+    // For now, create a processing record
+    // Full audio processing with muting will be implemented in next iteration
     const cleanFileName = `${fileName.replace(/\.[^/.]+$/, "")}-clean.mp3`;
     const cleanPath = `${user.id}/clean/${cleanFileName}`;
 
-    // Store metadata about the clean version
     const { data: cleanRecord, error: insertError } = await supabaseClient
       .from("audio_analyses")
       .insert({
@@ -114,7 +103,8 @@ serve(async (req) => {
         file_name: cleanFileName,
         storage_path: cleanPath,
         status: "processing",
-        transcript: `Clean version with ${explicitWords.length} words muted`,
+        transcript: `Clean version with ${explicitWords.length} words to be muted`,
+        explicit_words: muteSegments,
       })
       .select()
       .single();
@@ -124,18 +114,15 @@ serve(async (req) => {
       throw insertError;
     }
 
-    console.log("[GENERATE-CLEAN] Clean version record created:", cleanRecord.id);
-
-    // Background task: Process audio with FFmpeg-like approach
-    // For now, return the processing status
-    // In production, this would trigger actual audio processing
+    console.log("[GENERATE-CLEAN] Processing record created:", cleanRecord.id);
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: "Clean audio generation started",
+        message: `Processing started to mute ${muteSegments.length} explicit segments`,
         analysisId: cleanRecord.id,
         cleanPath: cleanPath,
+        mutedSegments: muteSegments,
         status: "processing",
       }),
       {

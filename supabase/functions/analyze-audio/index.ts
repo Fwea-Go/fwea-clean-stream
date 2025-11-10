@@ -26,25 +26,36 @@ async function aiProfanityDetection(words: any[], transcript: string) {
       end: w.end,
     }));
 
-    const prompt = `You are an expert profanity detection system. Analyze the following transcript and identify ALL explicit content, including:
-- Standard profanity and curse words
-- Slang and informal explicit terms
-- Regional and dialect-specific explicit language
-- Sexual references and innuendo
-- Hate speech and slurs
-- Drug references when explicit
-- Abbreviated or censored profanity (e.g., "fck", "sh*t", "a$$")
-- Any other content that would require censoring for radio/clean versions
+    const prompt = `You are an elite profanity detection system used by radio stations and streaming services. Your job is to identify EVERY SINGLE explicit word or phrase that would need censoring for a clean/radio version.
 
-Be extremely thorough and catch even subtle or niche explicit terms across all languages and cultures.
+CRITICAL: Be EXTREMELY aggressive. If there's even a 20% chance a word is explicit, FLAG IT. False positives are acceptable - missing explicit content is not.
+
+Categories to catch (with examples):
+1. Standard profanity: fuck, shit, damn, hell, ass, bitch, bastard, crap
+2. Strong profanity: motherfucker, cunt, cocksucker, prick, dick, pussy
+3. Slang variations: fck, f*ck, eff, frickin, friggin, wtf, stfu, af
+4. Sexual content: Any sexual acts, body parts, or innuendo
+5. Slurs and hate speech: ANY racial, ethnic, or discriminatory terms
+6. Drug references: Explicit mentions of drugs, getting high, etc.
+7. Regional slang: UK (bloody, wanker, bollocks), Australian (c*nt variant)
+8. Hip-hop/rap slang: nigga, hoe, thot, any explicit street terms
+9. Abbreviations: af, wtf, omg, damn, bs
+10. Sound-alikes: shiit, dayum, b1tch, etc.
 
 Transcript:
 ${transcript}
 
-Word timing data (word index, word, start time, end time):
-${wordMap.slice(0, 1000).map(w => `${w.index}: "${w.word}" (${w.start.toFixed(2)}s - ${w.end.toFixed(2)}s)`).join('\n')}
+Word timing data (first 1000 words):
+${wordMap.slice(0, 1000).map(w => `${w.index}: "${w.word}" (${w.start.toFixed(2)}s-${w.end.toFixed(2)}s)`).join('\n')}
 
-Return the indices of ALL words that contain explicit content. Be aggressive - when in doubt, flag it.`;
+INSTRUCTIONS:
+1. Read EVERY word carefully
+2. Check against ALL categories above
+3. When uncertain, FLAG IT
+4. Return indices of ALL explicit words
+5. Be aggressive - err on the side of flagging
+
+Return the word indices that need censoring.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -113,6 +124,8 @@ Return the indices of ALL words that contain explicit content. Be aggressive - w
     const confidenceScores = result.confidence_scores || [];
 
     console.log(`[ANALYZE-AUDIO] AI detected ${explicitIndices.length} explicit words`);
+    console.log("[ANALYZE-AUDIO] Full AI result:", JSON.stringify(result));
+    console.log("[ANALYZE-AUDIO] Explicit indices:", JSON.stringify(explicitIndices.slice(0, 20)));
 
     // Map indices back to words with timestamps
     const detectedWords = explicitIndices.map((idx: number, i: number) => {
@@ -122,7 +135,7 @@ Return the indices of ALL words that contain explicit content. Be aggressive - w
         return null;
       }
       
-      console.log("[ANALYZE-AUDIO] AI Flagged:", word.word, "at", word.start);
+      console.log("[ANALYZE-AUDIO] AI Flagged:", word.word, "at", word.start, "confidence:", confidenceScores[i] || 0.95);
       
       return {
         word: word.word,
@@ -132,6 +145,11 @@ Return the indices of ALL words that contain explicit content. Be aggressive - w
         language: "ai-detected",
       };
     }).filter((w: any) => w !== null);
+
+    if (detectedWords.length === 0) {
+      console.warn("[ANALYZE-AUDIO] AI detected 0 words, falling back to basic detection");
+      return basicDetection(words);
+    }
 
     return detectedWords;
 
