@@ -162,6 +162,8 @@ export const AnalysisProgress = ({ onComplete, onCancel, audioFile }: AnalysisPr
         sessionStorage.setItem('audioAnalysis', JSON.stringify(data));
         sessionStorage.setItem('vocalsUrl', separationData.vocalsUrl);
         sessionStorage.setItem('instrumentalUrl', separationData.instrumentalUrl);
+        sessionStorage.setItem('vocalsStoragePath', separationData.vocalsPath);
+        sessionStorage.setItem('instrumentalStoragePath', separationData.instrumentalPath);
 
         setTimeout(() => {
           onComplete();

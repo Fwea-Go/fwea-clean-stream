@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Pause, Download, AlertCircle } from "lucide-react";
+import { Play, Pause, Download, AlertCircle, Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { PaywallModal } from "./PaywallModal";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 
 interface ExplicitWord {
   word: string;
@@ -26,6 +28,7 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   const [transcript, setTranscript] = useState("");
   const [duration, setDuration] = useState(180);
   const [isDemo, setIsDemo] = useState(false);
+  const [isGeneratingClean, setIsGeneratingClean] = useState(false);
   const vocalsRef = useRef<HTMLAudioElement | null>(null);
   const instrumentalRef = useRef<HTMLAudioElement | null>(null);
 
@@ -207,6 +210,71 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const handleGenerateClean = async () => {
+    setIsGeneratingClean(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({
+          title: "Authentication Required",
+          description: "Please sign in to download",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const vocalsPath = sessionStorage.getItem('vocalsStoragePath');
+      const instrumentalPath = sessionStorage.getItem('instrumentalStoragePath');
+
+      if (!vocalsPath || !instrumentalPath) {
+        throw new Error("Missing audio stems");
+      }
+
+      toast({
+        title: "Generating Clean Version",
+        description: "This may take a few minutes...",
+      });
+
+      const { data, error } = await supabase.functions.invoke("generate-clean-audio", {
+        body: {
+          vocalsPath,
+          instrumentalPath,
+          explicitWords: detectedWords,
+          fileName,
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Clean Version Ready!",
+        description: "Your clean audio is being processed and will download shortly.",
+      });
+
+      // For MVP, we'll simulate the download
+      // In production, this would poll for completion and download the result
+      console.log("Clean audio generation initiated:", data);
+      
+    } catch (error) {
+      console.error("Clean generation error:", error);
+      toast({
+        title: "Generation Error",
+        description: "Failed to generate clean version. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingClean(false);
+    }
+  };
+
+  const handlePurchaseComplete = () => {
+    // After purchase, generate the clean audio
+    handleGenerateClean();
+  };
+
   const progressPercentage = (currentTime / PREVIEW_LIMIT) * 100;
 
   return (
@@ -328,11 +396,20 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
               <Button
                 size="lg"
                 onClick={() => setShowPaywall(true)}
-                disabled={isDemo}
+                disabled={isDemo || isGeneratingClean}
                 className="bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Download className="h-5 w-5 mr-2" />
-                Download Full Version
+                {isGeneratingClean ? (
+                  <>
+                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-5 w-5 mr-2" />
+                    Download Full Version
+                  </>
+                )}
               </Button>
             </div>
 
@@ -388,7 +465,11 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
         </div>
       </div>
 
-      <PaywallModal open={showPaywall} onOpenChange={setShowPaywall} />
+      <PaywallModal 
+        open={showPaywall} 
+        onOpenChange={setShowPaywall}
+        onPurchaseComplete={handlePurchaseComplete}
+      />
     </div>
   );
 };

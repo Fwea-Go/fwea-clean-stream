@@ -14,9 +14,10 @@ import { toast } from "@/hooks/use-toast";
 interface PaywallModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onPurchaseComplete?: () => void;
 }
 
-export const PaywallModal = ({ open, onOpenChange }: PaywallModalProps) => {
+export const PaywallModal = ({ open, onOpenChange, onPurchaseComplete }: PaywallModalProps) => {
   const [loadingPayment, setLoadingPayment] = useState(false);
   const [loadingSubscription, setLoadingSubscription] = useState(false);
 
@@ -52,6 +53,11 @@ export const PaywallModal = ({ open, onOpenChange }: PaywallModalProps) => {
 
       if (data?.url) {
         window.open(data.url, "_blank");
+        toast({
+          title: "Payment Processing",
+          description: "Complete payment in the new window to download your clean version.",
+        });
+        onPurchaseComplete?.();
       }
     } catch (error) {
       console.error("Payment error:", error);
@@ -88,6 +94,11 @@ export const PaywallModal = ({ open, onOpenChange }: PaywallModalProps) => {
 
       if (data?.url) {
         window.open(data.url, "_blank");
+        toast({
+          title: "Subscription Starting",
+          description: "Complete subscription in the new window for unlimited access.",
+        });
+        onPurchaseComplete?.();
       }
     } catch (error) {
       console.error("Subscription error:", error);

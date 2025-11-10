@@ -208,6 +208,8 @@ serve(async (req) => {
         vocalsStoragePath: vocalsAnalysisPath,
         vocalsUrl: vocalsUrlData.publicUrl,
         instrumentalUrl: instrumentalUrlData.publicUrl,
+        vocalsPath: vocalsPath,
+        instrumentalPath: instrumentalPath,
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
