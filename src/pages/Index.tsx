@@ -65,6 +65,12 @@ const Index = () => {
     sessionStorage.removeItem('audioAnalysis');
     sessionStorage.removeItem('vocalsUrl');
     sessionStorage.removeItem('instrumentalUrl');
+    sessionStorage.removeItem('originalAudioUrl');
+    
+    // Store original audio URL for comparison
+    const originalUrl = URL.createObjectURL(file);
+    sessionStorage.setItem('originalAudioUrl', originalUrl);
+    
     setUploadedFile(file);
     setAppState("analyzing");
   };
