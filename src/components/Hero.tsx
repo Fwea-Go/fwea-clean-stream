@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Upload } from "lucide-react";
 
 interface HeroProps {
@@ -21,19 +22,26 @@ export const Hero = ({ onGetStarted, onShowDemo }: HeroProps) => {
             <span className="text-foreground" style={{ textShadow: '0 0 10px hsl(189 100% 50%), 0 0 20px hsl(189 100% 50%), 0 0 30px hsl(189 100% 50%)' }}>Fwea-I</span>
           </h1>
           <p className="text-3xl md:text-4xl font-bold text-foreground mb-2">
-            Omnilingual Clean Version Editor
+            Clean Your Vocals
           </p>
-          <div className="flex items-center justify-center gap-2 text-muted-foreground">
+          <div className="flex items-center justify-center gap-2 text-muted-foreground mb-3">
             <div className="h-px w-12 bg-gradient-to-r from-transparent via-primary to-transparent" />
-            <p className="text-sm uppercase tracking-wider">AI-Powered Explicit Detection</p>
+            <p className="text-sm uppercase tracking-wider">For Artists, Producers & Content Creators</p>
             <div className="h-px w-12 bg-gradient-to-r from-transparent via-primary to-transparent" />
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+            <Badge variant="outline" className="border-primary/50">Music</Badge>
+            <Badge variant="outline" className="border-secondary/50">Podcasts</Badge>
+            <Badge variant="outline" className="border-accent/50">Voice Content</Badge>
+            <Badge variant="outline" className="border-primary/50">Short-Form Video</Badge>
           </div>
         </div>
 
         <p className="text-xl md:text-2xl text-muted-foreground mb-12 max-w-3xl mx-auto leading-relaxed">
-          Advanced AI technology that detects and removes explicit content in{" "}
-          <span className="text-secondary font-semibold">any language</span>.
-          Get clean versions of your tracks in seconds with professional-grade results.
+          AI-powered profanity detection that works{" "}
+          <span className="text-secondary font-semibold">best with vocal recordings</span>.
+          Upload acapellas, vocal stems, or voice content and get clean versions instantly in{" "}
+          <span className="text-primary font-semibold">any language</span>.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
@@ -59,17 +67,17 @@ export const Hero = ({ onGetStarted, onShowDemo }: HeroProps) => {
           <div className="glass-card p-6 rounded-xl border-primary/30 hover:border-primary/60 transition-all duration-300">
             <div className="text-primary text-4xl font-black mb-3">100+</div>
             <div className="text-foreground font-semibold mb-2">Languages Supported</div>
-            <p className="text-sm text-muted-foreground">Omnilingual detection across all major languages</p>
+            <p className="text-sm text-muted-foreground">Detects explicit content in any language</p>
           </div>
           <div className="glass-card p-6 rounded-xl border-secondary/30 hover:border-secondary/60 transition-all duration-300">
-            <div className="text-secondary text-4xl font-black mb-3">99.8%</div>
-            <div className="text-foreground font-semibold mb-2">Accuracy Rate</div>
-            <p className="text-sm text-muted-foreground">Industry-leading explicit content detection</p>
+            <div className="text-secondary text-4xl font-black mb-3">Vocal</div>
+            <div className="text-foreground font-semibold mb-2">Optimized Processing</div>
+            <p className="text-sm text-muted-foreground">Best results with acapellas & voice recordings</p>
           </div>
           <div className="glass-card p-6 rounded-xl border-accent/30 hover:border-accent/60 transition-all duration-300">
             <div className="text-accent text-4xl font-black mb-3">&lt;60s</div>
             <div className="text-foreground font-semibold mb-2">Processing Time</div>
-            <p className="text-sm text-muted-foreground">Lightning-fast analysis and generation</p>
+            <p className="text-sm text-muted-foreground">Fast analysis and clean version export</p>
           </div>
         </div>
       </div>

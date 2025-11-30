@@ -63,6 +63,13 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
         console.error("Error loading analysis:", error);
       }
     }
+
+    // Check if we should trigger clean generation after payment
+    const triggerClean = sessionStorage.getItem('triggerCleanGeneration');
+    if (triggerClean === 'true') {
+      sessionStorage.removeItem('triggerCleanGeneration');
+      handleGenerateClean();
+    }
   }, []);
 
   // Initialize audio elements with separated stems
@@ -249,14 +256,24 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
 
       if (error) throw error;
 
-      toast({
-        title: "Clean Version Ready!",
-        description: "Your clean audio is being processed and will download shortly.",
-      });
+      if (data?.downloadUrl && data?.fileName) {
+        toast({
+          title: "Clean Version Ready!",
+          description: "Your download will start automatically.",
+        });
 
-      // For MVP, we'll simulate the download
-      // In production, this would poll for completion and download the result
-      console.log("Clean audio generation initiated:", data);
+        // Trigger automatic download
+        const link = document.createElement('a');
+        link.href = data.downloadUrl;
+        link.download = data.fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        console.log("Clean audio downloaded:", data.fileName);
+      } else {
+        throw new Error("No download URL received");
+      }
       
     } catch (error) {
       console.error("Clean generation error:", error);
