@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { Upload, FileAudio } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { Badge } from "@/components/ui/badge";
 
 interface UploadZoneProps {
   onFileUpload: (file: File) => void;
@@ -86,11 +87,18 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
     <div className="max-w-3xl mx-auto px-4 py-20">
       <div className="text-center mb-8 animate-slide-up">
         <h2 className="text-4xl font-bold mb-4">
-          Upload Your <span className="text-primary neon-text">Dirty Version</span>
+          Upload Your <span className="text-primary neon-text">Vocal Recording</span>
         </h2>
-        <p className="text-muted-foreground text-lg">
+        <p className="text-muted-foreground text-lg mb-2">
           Drag and drop your audio file, or click to browse
         </p>
+        <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground mt-3">
+          <span>🎤 Works best with:</span>
+          <Badge variant="outline" className="border-primary/50">Acapellas</Badge>
+          <Badge variant="outline" className="border-secondary/50">Vocal Stems</Badge>
+          <Badge variant="outline" className="border-accent/50">Voice Recordings</Badge>
+          <Badge variant="outline" className="border-primary/50">Spoken Word</Badge>
+        </div>
       </div>
 
       <label
