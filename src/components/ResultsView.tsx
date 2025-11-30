@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Pause, Download, AlertCircle, Loader2 } from "lucide-react";
-import { Progress } from "@/components/ui/progress";
+import { Download, AlertCircle, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PaywallModal } from "./PaywallModal";
+import { AudioComparison } from "./AudioComparison";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
@@ -21,16 +21,15 @@ interface ResultsViewProps {
 }
 
 export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
   const [showPaywall, setShowPaywall] = useState(false);
   const [detectedWords, setDetectedWords] = useState<ExplicitWord[]>([]);
   const [transcript, setTranscript] = useState("");
   const [duration, setDuration] = useState(180);
   const [isDemo, setIsDemo] = useState(false);
   const [isGeneratingClean, setIsGeneratingClean] = useState(false);
-  const vocalsRef = useRef<HTMLAudioElement | null>(null);
-  const instrumentalRef = useRef<HTMLAudioElement | null>(null);
+  const [originalAudioUrl, setOriginalAudioUrl] = useState("");
+  const [vocalsUrl, setVocalsUrl] = useState("");
+  const [instrumentalUrl, setInstrumentalUrl] = useState("");
 
   const PREVIEW_LIMIT = 30; // 30 seconds free preview
 
@@ -38,10 +37,17 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   useEffect(() => {
     const analysisData = sessionStorage.getItem('audioAnalysis');
     const demoMode = sessionStorage.getItem('isDemo');
+    const storedOriginalUrl = sessionStorage.getItem('originalAudioUrl');
+    const storedVocalsUrl = sessionStorage.getItem('vocalsUrl');
+    const storedInstrumentalUrl = sessionStorage.getItem('instrumentalUrl');
     
     if (demoMode === 'true') {
       setIsDemo(true);
     }
+
+    if (storedOriginalUrl) setOriginalAudioUrl(storedOriginalUrl);
+    if (storedVocalsUrl) setVocalsUrl(storedVocalsUrl);
+    if (storedInstrumentalUrl) setInstrumentalUrl(storedInstrumentalUrl);
     
     if (analysisData) {
       try {
@@ -50,8 +56,8 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
         // Map the analysis data to our format
         const words: ExplicitWord[] = data.explicitWords?.map((w: any) => ({
           word: w.word,
-          timestamp: Math.max(0, (w.start || 0) - 0.1), // Start muting 0.1s early for buffer
-          end: (w.end || (w.start + 0.8)) + 0.2, // Mute for at least 0.8s + 0.2s buffer after
+          timestamp: Math.max(0, (w.start || 0) - 0.1),
+          end: (w.end || (w.start + 0.8)) + 0.2,
           language: w.language || data.language || "unknown",
           confidence: w.confidence || 0.95,
         })) || [];
@@ -72,144 +78,7 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
     }
   }, []);
 
-  // Initialize audio elements with separated stems
-  useEffect(() => {
-    const vocalsUrl = sessionStorage.getItem('vocalsUrl');
-    const instrumentalUrl = sessionStorage.getItem('instrumentalUrl');
-    
-    console.log('[ResultsView] Loading separated stems:', { vocalsUrl, instrumentalUrl });
-    
-    // Skip audio loading in demo mode
-    if (isDemo) {
-      console.log('[ResultsView] Demo mode - skipping audio initialization');
-      return;
-    }
-    
-    if (vocalsUrl && instrumentalUrl && !vocalsRef.current && !instrumentalRef.current) {
-      // Initialize vocals audio
-      const vocalsAudio = new Audio(vocalsUrl);
-      vocalsAudio.addEventListener('loadedmetadata', () => {
-        console.log('[ResultsView] Vocals loaded, duration:', vocalsAudio.duration);
-      });
-      
-      vocalsAudio.addEventListener('error', (e) => {
-        console.error('[ResultsView] Vocals error:', e);
-      });
-      
-      // Initialize instrumental audio
-      const instrumentalAudio = new Audio(instrumentalUrl);
-      instrumentalAudio.addEventListener('loadedmetadata', () => {
-        console.log('[ResultsView] Instrumental loaded, duration:', instrumentalAudio.duration);
-      });
-      
-      instrumentalAudio.addEventListener('error', (e) => {
-        console.error('[ResultsView] Instrumental error:', e);
-      });
-      
-      // Sync time updates from instrumental (which plays continuously)
-      instrumentalAudio.addEventListener('timeupdate', () => {
-        setCurrentTime(instrumentalAudio.currentTime);
-        
-        // Sync vocals to same time
-        if (vocalsAudio && Math.abs(vocalsAudio.currentTime - instrumentalAudio.currentTime) > 0.1) {
-          vocalsAudio.currentTime = instrumentalAudio.currentTime;
-        }
-        
-        // Check if we've reached preview limit (but allow replay)
-        if (instrumentalAudio.currentTime >= PREVIEW_LIMIT) {
-          instrumentalAudio.pause();
-          vocalsAudio.pause();
-          setIsPlaying(false);
-          setShowPaywall(true);
-        }
-      });
-      
-      instrumentalAudio.addEventListener('ended', () => {
-        vocalsAudio.pause();
-        setIsPlaying(false);
-      });
-      
-      vocalsRef.current = vocalsAudio;
-      instrumentalRef.current = instrumentalAudio;
-      
-      console.log('[ResultsView] Audio elements initialized with separated stems');
-    } else if (!vocalsUrl || !instrumentalUrl) {
-      console.error('[ResultsView] Missing separated stem URLs');
-    }
-
-    return () => {
-      if (vocalsRef.current) {
-        vocalsRef.current.pause();
-        vocalsRef.current.src = '';
-        vocalsRef.current = null;
-      }
-      if (instrumentalRef.current) {
-        instrumentalRef.current.pause();
-        instrumentalRef.current.src = '';
-        instrumentalRef.current = null;
-      }
-    };
-  }, []);
-
-  // Handle muting vocals during explicit words (instrumental keeps playing)
-  useEffect(() => {
-    if (vocalsRef.current && detectedWords.length > 0) {
-      // Check if we're currently on an explicit word
-      const currentWord = detectedWords.find(word => {
-        return currentTime >= word.timestamp && currentTime <= word.end;
-      });
-      
-      // Mute vocals during explicit words, unmute otherwise
-      vocalsRef.current.volume = currentWord ? 0 : 1;
-      
-      if (currentWord && vocalsRef.current.volume === 0) {
-        console.log('[ResultsView] Muting vocals:', currentWord.word, 'at', currentTime.toFixed(2));
-      }
-    }
-  }, [currentTime, detectedWords]);
-
-  // Handle play/pause for both stems
-  useEffect(() => {
-    if (vocalsRef.current && instrumentalRef.current) {
-      if (isPlaying) {
-        console.log('Playing both stems...');
-        
-        // Start both at the same time
-        const playVocals = vocalsRef.current.play();
-        const playInstrumental = instrumentalRef.current.play();
-        
-        Promise.all([playVocals, playInstrumental])
-          .then(() => {
-            console.log('Both stems playing successfully');
-          })
-          .catch(err => {
-            console.error('Error playing stems:', err);
-            setIsPlaying(false);
-          });
-      } else {
-        vocalsRef.current.pause();
-        instrumentalRef.current.pause();
-        console.log('Both stems paused');
-      }
-    }
-  }, [isPlaying]);
-
-  const togglePlayPause = () => {
-    if (!vocalsRef.current || !instrumentalRef.current) {
-      console.error('Audio elements not initialized');
-      return;
-    }
-    
-    // If at end of preview, reset to beginning
-    if (currentTime >= PREVIEW_LIMIT) {
-      vocalsRef.current.currentTime = 0;
-      instrumentalRef.current.currentTime = 0;
-      setCurrentTime(0);
-    }
-    
-    console.log('Toggle play/pause, current state:', isPlaying);
-    setIsPlaying(!isPlaying);
-  };
+  // Audio elements are now handled by AudioComparison component
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -292,8 +161,6 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
     handleGenerateClean();
   };
 
-  const progressPercentage = (currentTime / PREVIEW_LIMIT) * 100;
-
   return (
     <div className="max-w-6xl mx-auto px-4 py-12">
       <div className="animate-slide-up space-y-8">
@@ -347,101 +214,49 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
           </div>
         </div>
 
-        {/* Audio Player */}
-        <div className="glass-card rounded-2xl p-8 neon-border">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-2xl font-bold">Clean Version Preview</h3>
-            <Badge variant="outline" className="border-primary text-primary">
-              30s Free Preview
-            </Badge>
-          </div>
-
-          {/* Waveform visualization mockup */}
-          <div className="relative h-24 mb-6 bg-muted/20 rounded-lg overflow-hidden">
-            <div className="absolute inset-0 flex items-center">
-              {Array.from({ length: 100 }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`flex-1 mx-px transition-all duration-300 ${
-                    i < (currentTime / PREVIEW_LIMIT) * 100
-                      ? "bg-primary"
-                      : "bg-muted-foreground/30"
-                  }`}
-                  style={{
-                    height: `${Math.random() * 100}%`,
-                  }}
-                />
-              ))}
+        {/* Audio Comparison Player */}
+        {!isDemo && originalAudioUrl && vocalsUrl && instrumentalUrl ? (
+          <AudioComparison
+            originalAudioUrl={originalAudioUrl}
+            vocalsUrl={vocalsUrl}
+            instrumentalUrl={instrumentalUrl}
+            explicitWords={detectedWords}
+            duration={duration}
+            previewLimit={PREVIEW_LIMIT}
+          />
+        ) : isDemo ? (
+          <div className="glass-card rounded-2xl p-8 neon-border">
+            <div className="text-center py-12">
+              <Badge variant="outline" className="text-accent border-accent mb-4">
+                DEMO MODE
+              </Badge>
+              <p className="text-muted-foreground">
+                Upload your own audio to hear the comparison!
+              </p>
             </div>
-            {/* Explicit markers */}
-            {detectedWords.map((word, idx) => {
-              const position = (word.timestamp / duration) * 100;
-              if (position <= (PREVIEW_LIMIT / duration) * 100) {
-                return (
-                  <div
-                    key={idx}
-                    className="absolute top-0 bottom-0 w-1 bg-secondary"
-                    style={{ left: `${position}%` }}
-                  />
-                );
-              }
-              return null;
-            })}
           </div>
+        ) : null}
 
-          <div className="space-y-4">
-            <Progress value={progressPercentage} className="h-2" />
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>{formatTime(currentTime)}</span>
-              <span>{formatTime(PREVIEW_LIMIT)}</span>
-            </div>
-
-            <div className="flex gap-4 justify-center">
-              <Button
-                size="lg"
-                onClick={togglePlayPause}
-                disabled={isDemo}
-                className="bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-all duration-300 glow-hover disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isPlaying ? (
-                  <Pause className="h-5 w-5 mr-2" />
-                ) : (
-                  <Play className="h-5 w-5 mr-2" />
-                )}
-                {isDemo ? "Demo Mode - No Audio" : currentTime >= PREVIEW_LIMIT ? "Replay Preview" : isPlaying ? "Pause" : "Play Preview"}
-              </Button>
-              <Button
-                size="lg"
-                onClick={() => setShowPaywall(true)}
-                disabled={isDemo || isGeneratingClean}
-                className="bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isGeneratingClean ? (
-                  <>
-                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-5 w-5 mr-2" />
-                    Download Full Version
-                  </>
-                )}
-              </Button>
-            </div>
-
-            {currentTime >= PREVIEW_LIMIT && (
-            <div className="flex items-center gap-2 justify-center text-accent text-sm animate-fade-in">
-              <AlertCircle className="h-4 w-4" />
-              <span>30s preview complete. Click play to listen again or upgrade to download the full version.</span>
-            </div>
-          )}
-          
-          <div className="text-center text-xs text-muted-foreground mt-4 space-y-1">
-            <p>✨ Vocals separated and analyzed independently</p>
-            <p className="text-primary">🎵 Instrumental keeps playing while vocals are muted during explicit words</p>
-          </div>
-          </div>
+        {/* Download Button */}
+        <div className="flex justify-center gap-4 mt-6">
+          <Button
+            size="lg"
+            onClick={() => setShowPaywall(true)}
+            disabled={isDemo || isGeneratingClean}
+            className="bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isGeneratingClean ? (
+              <>
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5 mr-2" />
+                Download Full Clean Version
+              </>
+            )}
+          </Button>
         </div>
 
         {/* Detected Words Table */}
@@ -470,7 +285,12 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
-                        <Progress value={word.confidence * 100} className="h-2 w-20" />
+                        <div className="h-2 w-20 bg-muted rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-primary transition-all"
+                            style={{ width: `${word.confidence * 100}%` }}
+                          />
+                        </div>
                         <span className="text-sm text-muted-foreground">{(word.confidence * 100).toFixed(1)}%</span>
                       </div>
                     </td>
