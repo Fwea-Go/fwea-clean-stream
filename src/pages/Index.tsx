@@ -8,7 +8,7 @@ import { DemoProgress } from "@/components/DemoProgress";
 import { ResultsView } from "@/components/ResultsView";
 import { LanguageBanner } from "@/components/LanguageBanner";
 import { Button } from "@/components/ui/button";
-import { LogOut, History as HistoryIcon } from "lucide-react";
+import { LogOut, History as HistoryIcon, LogIn } from "lucide-react";
 
 type AppState = "hero" | "upload" | "analyzing" | "demo" | "results";
 
@@ -101,28 +101,41 @@ const Index = () => {
 
   return (
     <main className="min-h-screen relative pb-16">
-      {user && (
-        <div className="absolute top-4 right-4 z-50 flex gap-2">
+      {/* Top Right Navigation */}
+      <div className="absolute top-4 right-4 z-50 flex gap-2">
+        {user ? (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate("/history")}
+              className="gap-2"
+            >
+              <HistoryIcon className="h-4 w-4" />
+              My Edits
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={signOut}
+              className="gap-2"
+            >
+              <LogOut className="h-4 w-4" />
+              Sign Out
+            </Button>
+          </>
+        ) : (
           <Button
             variant="outline"
             size="sm"
-            onClick={() => navigate("/history")}
+            onClick={() => navigate("/auth")}
             className="gap-2"
           >
-            <HistoryIcon className="h-4 w-4" />
-            My Edits
+            <LogIn className="h-4 w-4" />
+            Sign In
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={signOut}
-            className="gap-2"
-          >
-            <LogOut className="h-4 w-4" />
-            Sign Out
-          </Button>
-        </div>
-      )}
+        )}
+      </div>
       
       {appState === "hero" && <Hero onGetStarted={handleGetStarted} onShowDemo={handleShowDemo} />}
       {appState === "upload" && <UploadZone onFileUpload={handleFileUpload} />}

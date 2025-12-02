@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Play, Pause, RotateCcw } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Slider } from "@/components/ui/slider";
 import { useAudioProtection } from "@/hooks/use-audio-protection";
 
 interface AudioComparisonProps {
@@ -24,57 +25,29 @@ export const AudioComparison = ({
 }: AudioComparisonProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [activeVersion, setActiveVersion] = useState<"original" | "clean" | "both">("both");
+  const [crossfade, setCrossfade] = useState(50); // 0 = Original, 100 = Clean
   
   const originalAudioRef = useRef<HTMLAudioElement | null>(null);
   const vocalsRef = useRef<HTMLAudioElement | null>(null);
   const instrumentalRef = useRef<HTMLAudioElement | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
   const { isProtected } = useAudioProtection(true);
 
+  // Check if current time is in an explicit segment
+  const isInExplicitSegment = useCallback((time: number) => {
+    return explicitWords.some(word => time >= word.timestamp && time <= word.end);
+  }, [explicitWords]);
+
   // Initialize audio elements
   useEffect(() => {
-    // Original audio
     const originalAudio = new Audio(originalAudioUrl);
-    originalAudio.addEventListener('loadedmetadata', () => {
-      console.log('[AudioComparison] Original audio loaded');
-    });
-
-    // Vocals audio
     const vocalsAudio = new Audio(vocalsUrl);
-    vocalsAudio.addEventListener('loadedmetadata', () => {
-      console.log('[AudioComparison] Vocals loaded');
-    });
-
-    // Instrumental audio
     const instrumentalAudio = new Audio(instrumentalUrl);
-    instrumentalAudio.addEventListener('loadedmetadata', () => {
-      console.log('[AudioComparison] Instrumental loaded');
-    });
 
-    // Sync time updates
-    const handleTimeUpdate = () => {
-      const time = originalAudio.currentTime;
-      setCurrentTime(time);
-
-      // Sync all audio elements
-      if (vocalsAudio && Math.abs(vocalsAudio.currentTime - time) > 0.1) {
-        vocalsAudio.currentTime = time;
-      }
-      if (instrumentalAudio && Math.abs(instrumentalAudio.currentTime - time) > 0.1) {
-        instrumentalAudio.currentTime = time;
-      }
-
-      // Preview limit check
-      if (time >= previewLimit) {
-        originalAudio.pause();
-        vocalsAudio.pause();
-        instrumentalAudio.pause();
-        setIsPlaying(false);
-      }
-    };
-
-    originalAudio.addEventListener('timeupdate', handleTimeUpdate);
+    originalAudio.preload = 'auto';
+    vocalsAudio.preload = 'auto';
+    instrumentalAudio.preload = 'auto';
 
     originalAudioRef.current = originalAudio;
     vocalsRef.current = vocalsAudio;
@@ -84,56 +57,85 @@ export const AudioComparison = ({
       originalAudio.pause();
       vocalsAudio.pause();
       instrumentalAudio.pause();
-      originalAudioRef.current = null;
-      vocalsRef.current = null;
-      instrumentalRef.current = null;
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     };
-  }, [originalAudioUrl, vocalsUrl, instrumentalUrl, previewLimit]);
+  }, [originalAudioUrl, vocalsUrl, instrumentalUrl]);
 
-  // Handle muting vocals during explicit words
+  // Time update loop
   useEffect(() => {
-    if (vocalsRef.current && explicitWords.length > 0) {
-      const currentWord = explicitWords.find(word => {
-        return currentTime >= word.timestamp && currentTime <= word.end;
-      });
-      
-      vocalsRef.current.volume = currentWord ? 0 : 1;
-    }
-  }, [currentTime, explicitWords]);
+    const updateTime = () => {
+      if (originalAudioRef.current && isPlaying) {
+        const time = originalAudioRef.current.currentTime;
+        setCurrentTime(time);
 
-  // Handle play/pause with version switching
+        // Sync all audio elements
+        if (vocalsRef.current && Math.abs(vocalsRef.current.currentTime - time) > 0.15) {
+          vocalsRef.current.currentTime = time;
+        }
+        if (instrumentalRef.current && Math.abs(instrumentalRef.current.currentTime - time) > 0.15) {
+          instrumentalRef.current.currentTime = time;
+        }
+
+        // Preview limit check
+        if (time >= previewLimit) {
+          originalAudioRef.current.pause();
+          vocalsRef.current?.pause();
+          instrumentalRef.current?.pause();
+          setIsPlaying(false);
+          return;
+        }
+
+        animationFrameRef.current = requestAnimationFrame(updateTime);
+      }
+    };
+
+    if (isPlaying) {
+      animationFrameRef.current = requestAnimationFrame(updateTime);
+    }
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [isPlaying, previewLimit]);
+
+  // Handle volume based on crossfade and muting
+  useEffect(() => {
+    if (!originalAudioRef.current || !vocalsRef.current || !instrumentalRef.current) return;
+
+    const originalVolume = (100 - crossfade) / 100;
+    const cleanVolume = crossfade / 100;
+
+    // Original audio volume
+    originalAudioRef.current.volume = originalVolume;
+
+    // Clean audio: mute vocals during explicit segments
+    const inExplicit = isInExplicitSegment(currentTime);
+    vocalsRef.current.volume = inExplicit ? 0 : cleanVolume;
+    instrumentalRef.current.volume = cleanVolume;
+  }, [crossfade, currentTime, isInExplicitSegment]);
+
+  // Play/pause control
   useEffect(() => {
     if (!originalAudioRef.current || !vocalsRef.current || !instrumentalRef.current) return;
 
     if (isPlaying) {
-      if (activeVersion === "original") {
-        originalAudioRef.current.play();
-        vocalsRef.current.pause();
-        instrumentalRef.current.pause();
-      } else if (activeVersion === "clean") {
-        originalAudioRef.current.pause();
-        vocalsRef.current.play();
-        instrumentalRef.current.play();
-      } else {
-        // Both - play original on left, clean on right (user can toggle)
-        originalAudioRef.current.play();
-        vocalsRef.current.play();
-        instrumentalRef.current.play();
-      }
+      originalAudioRef.current.play().catch(console.error);
+      vocalsRef.current.play().catch(console.error);
+      instrumentalRef.current.play().catch(console.error);
     } else {
       originalAudioRef.current.pause();
       vocalsRef.current.pause();
       instrumentalRef.current.pause();
     }
-  }, [isPlaying, activeVersion]);
+  }, [isPlaying]);
 
   const togglePlayPause = () => {
     if (currentTime >= previewLimit) {
-      // Reset to beginning
-      if (originalAudioRef.current) originalAudioRef.current.currentTime = 0;
-      if (vocalsRef.current) vocalsRef.current.currentTime = 0;
-      if (instrumentalRef.current) instrumentalRef.current.currentTime = 0;
-      setCurrentTime(0);
+      resetPlayback();
     }
     setIsPlaying(!isPlaying);
   };
@@ -152,154 +154,187 @@ export const AudioComparison = ({
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const progressPercentage = (currentTime / previewLimit) * 100;
+  const progressPercentage = Math.min((currentTime / previewLimit) * 100, 100);
+
+  // Generate waveform bars (memoized via useMemo would be better but keeping simple)
+  const waveformBars = Array.from({ length: 60 }, (_, i) => {
+    const position = (i / 60) * previewLimit;
+    const isExplicit = explicitWords.some(w => 
+      position >= w.timestamp && position <= w.end
+    );
+    return { height: 20 + Math.sin(i * 0.5) * 30 + Math.cos(i * 0.3) * 20, isExplicit };
+  });
 
   return (
-    <div className="glass-card rounded-2xl p-8 neon-border audio-protected">
+    <div className="glass-card rounded-2xl p-6 md:p-8 neon-border audio-protected space-y-6">
       {isProtected && (
-        <div className="mb-4 text-center">
+        <div className="text-center">
           <Badge variant="outline" className="border-accent text-accent">
             🔒 Protected Preview
           </Badge>
         </div>
       )}
 
-      {/* Version Selector */}
-      <div className="flex justify-center gap-2 mb-6">
-        <Button
-          size="sm"
-          variant={activeVersion === "original" ? "default" : "outline"}
-          onClick={() => setActiveVersion("original")}
-        >
-          Original
-        </Button>
-        <Button
-          size="sm"
-          variant={activeVersion === "clean" ? "default" : "outline"}
-          onClick={() => setActiveVersion("clean")}
-        >
-          Clean
-        </Button>
-        <Button
-          size="sm"
-          variant={activeVersion === "both" ? "default" : "outline"}
-          onClick={() => setActiveVersion("both")}
-        >
-          Compare
-        </Button>
-      </div>
-
-      {/* Waveform Visualization */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        {/* Original Waveform */}
-        <div className="relative">
-          <div className="text-sm font-semibold mb-2 text-center">Original Audio</div>
-          <div className="relative h-24 bg-muted/20 rounded-lg overflow-hidden">
-            <div className="absolute inset-0 flex items-center">
-              {Array.from({ length: 50 }).map((_, i) => (
+      {/* Original Waveform */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold text-muted-foreground">Original</span>
+          <span className="text-xs text-muted-foreground opacity-60">
+            {crossfade < 50 ? "Playing" : ""}
+          </span>
+        </div>
+        <div className="relative h-20 bg-muted/10 rounded-lg overflow-hidden border border-border/30">
+          <div className="absolute inset-0 flex items-end justify-around px-1">
+            {waveformBars.map((bar, i) => {
+              const isPlayed = i < (currentTime / previewLimit) * 60;
+              return (
                 <div
                   key={i}
-                  className={`flex-1 mx-px transition-all duration-300 ${
-                    i < (currentTime / previewLimit) * 50 && activeVersion !== "clean"
+                  className={`w-1 rounded-t transition-all duration-75 ${
+                    bar.isExplicit
+                      ? "bg-destructive"
+                      : isPlayed && crossfade < 50
                       ? "bg-secondary"
                       : "bg-muted-foreground/30"
                   }`}
-                  style={{
-                    height: `${Math.random() * 100}%`,
-                  }}
+                  style={{ height: `${bar.height}%` }}
                 />
-              ))}
-            </div>
-            {/* Explicit markers on original */}
-            {explicitWords.map((word, idx) => {
-              const position = (word.timestamp / duration) * 100;
-              if (position <= (previewLimit / duration) * 100) {
-                return (
-                  <div
-                    key={idx}
-                    className="absolute top-0 bottom-0 w-1 bg-destructive opacity-70"
-                    style={{ left: `${position}%` }}
-                  />
-                );
-              }
-              return null;
+              );
             })}
           </div>
+          {/* Explicit markers */}
+          {explicitWords.map((word, idx) => {
+            const startPos = (word.timestamp / previewLimit) * 100;
+            const width = ((word.end - word.timestamp) / previewLimit) * 100;
+            if (startPos <= 100) {
+              return (
+                <div
+                  key={idx}
+                  className="absolute top-0 h-full bg-destructive/20 border-l border-r border-destructive/50"
+                  style={{ left: `${Math.min(startPos, 100)}%`, width: `${Math.min(width, 100 - startPos)}%` }}
+                />
+              );
+            }
+            return null;
+          })}
         </div>
+      </div>
 
-        {/* Clean Waveform */}
-        <div className="relative">
-          <div className="text-sm font-semibold mb-2 text-center">Clean Audio</div>
-          <div className="relative h-24 bg-muted/20 rounded-lg overflow-hidden">
-            <div className="absolute inset-0 flex items-center">
-              {Array.from({ length: 50 }).map((_, i) => (
+      {/* Crossfader */}
+      <div className="py-4 space-y-3">
+        <div className="flex items-center justify-between text-xs font-medium">
+          <span className={crossfade < 50 ? "text-secondary" : "text-muted-foreground"}>
+            ORIGINAL
+          </span>
+          <span className={crossfade > 50 ? "text-primary" : "text-muted-foreground"}>
+            CLEAN
+          </span>
+        </div>
+        <Slider
+          value={[crossfade]}
+          onValueChange={(v) => setCrossfade(v[0])}
+          max={100}
+          step={1}
+          className="cursor-pointer"
+        />
+        <div className="text-center">
+          <span className="text-xs text-muted-foreground">
+            {crossfade === 0 ? "100% Original" : 
+             crossfade === 100 ? "100% Clean" : 
+             crossfade === 50 ? "50/50 Mix" :
+             crossfade < 50 ? `${100 - crossfade}% Original` : `${crossfade}% Clean`}
+          </span>
+        </div>
+      </div>
+
+      {/* Clean Waveform */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold text-muted-foreground">Clean</span>
+          <span className="text-xs text-muted-foreground opacity-60">
+            {crossfade > 50 ? "Playing" : ""}
+          </span>
+        </div>
+        <div className="relative h-20 bg-muted/10 rounded-lg overflow-hidden border border-border/30">
+          <div className="absolute inset-0 flex items-end justify-around px-1">
+            {waveformBars.map((bar, i) => {
+              const isPlayed = i < (currentTime / previewLimit) * 60;
+              return (
                 <div
                   key={i}
-                  className={`flex-1 mx-px transition-all duration-300 ${
-                    i < (currentTime / previewLimit) * 50 && activeVersion !== "original"
+                  className={`w-1 rounded-t transition-all duration-75 ${
+                    bar.isExplicit
+                      ? "bg-accent/50"
+                      : isPlayed && crossfade > 50
                       ? "bg-primary"
                       : "bg-muted-foreground/30"
                   }`}
-                  style={{
-                    height: `${Math.random() * 100}%`,
-                  }}
+                  style={{ height: bar.isExplicit ? "10%" : `${bar.height}%` }}
                 />
-              ))}
-            </div>
-            {/* Muted segments on clean */}
-            {explicitWords.map((word, idx) => {
-              const position = (word.timestamp / duration) * 100;
-              if (position <= (previewLimit / duration) * 100) {
-                return (
-                  <div
-                    key={idx}
-                    className="absolute top-0 bottom-0 w-1 bg-accent"
-                    style={{ left: `${position}%` }}
-                  />
-                );
-              }
-              return null;
+              );
             })}
           </div>
+          {/* Muted segment markers */}
+          {explicitWords.map((word, idx) => {
+            const startPos = (word.timestamp / previewLimit) * 100;
+            const width = ((word.end - word.timestamp) / previewLimit) * 100;
+            if (startPos <= 100) {
+              return (
+                <div
+                  key={idx}
+                  className="absolute top-0 h-full bg-accent/10 border-l border-r border-accent/30 flex items-center justify-center"
+                  style={{ left: `${Math.min(startPos, 100)}%`, width: `${Math.min(width, 100 - startPos)}%` }}
+                >
+                  <span className="text-[8px] text-accent/60 font-medium">MUTED</span>
+                </div>
+              );
+            }
+            return null;
+          })}
         </div>
       </div>
 
       {/* Progress Bar */}
-      <div className="space-y-4">
-        <Progress value={progressPercentage} className="h-2" />
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
+      <div className="space-y-2">
+        <Progress value={progressPercentage} className="h-1.5" />
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{formatTime(currentTime)}</span>
-          <span>{formatTime(previewLimit)}</span>
+          <span className="text-primary">Preview: {formatTime(previewLimit)}</span>
         </div>
+      </div>
 
-        {/* Playback Controls */}
-        <div className="flex gap-4 justify-center">
-          <Button
-            size="lg"
-            onClick={togglePlayPause}
-            className="bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-all duration-300 glow-hover"
-          >
-            {isPlaying ? (
+      {/* Playback Controls */}
+      <div className="flex gap-3 justify-center">
+        <Button
+          size="lg"
+          onClick={togglePlayPause}
+          className="bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-all duration-300 min-w-32"
+        >
+          {isPlaying ? (
+            <>
               <Pause className="h-5 w-5 mr-2" />
-            ) : (
+              Pause
+            </>
+          ) : currentTime >= previewLimit ? (
+            <>
+              <RotateCcw className="h-5 w-5 mr-2" />
+              Replay
+            </>
+          ) : (
+            <>
               <Play className="h-5 w-5 mr-2" />
-            )}
-            {currentTime >= previewLimit ? "Replay" : isPlaying ? "Pause" : "Play"}
-          </Button>
-          <Button
-            size="lg"
-            variant="outline"
-            onClick={resetPlayback}
-          >
-            <RotateCcw className="h-5 w-5 mr-2" />
-            Reset
-          </Button>
-        </div>
+              Play
+            </>
+          )}
+        </Button>
+        <Button size="lg" variant="outline" onClick={resetPlayback}>
+          <RotateCcw className="h-5 w-5" />
+        </Button>
+      </div>
 
-        <div className="text-center text-xs text-muted-foreground mt-4 space-y-1">
-          <p>✨ Compare original vs cleaned audio side-by-side</p>
-          <p className="text-primary">🎵 Red markers = explicit words, Blue markers = muted segments</p>
-        </div>
+      <div className="text-center text-xs text-muted-foreground space-y-1">
+        <p>🎚️ Use the crossfader to blend between original and clean versions</p>
+        <p className="text-destructive/80">Red = Explicit content • <span className="text-accent">Blue = Muted in clean</span></p>
       </div>
     </div>
   );
