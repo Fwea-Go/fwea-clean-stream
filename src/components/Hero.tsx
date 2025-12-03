@@ -10,6 +10,23 @@ interface HeroProps {
 export const Hero = ({ onGetStarted, onShowDemo }: HeroProps) => {
   return (
     <section className="relative min-h-screen flex items-center justify-center px-4 overflow-hidden">
+      {/* Subliminal Background Text */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none flex items-center justify-center">
+        <div className="subliminal-text subliminal-text-rotated">
+          Omnilingual Clean Version Editor
+        </div>
+      </div>
+      <div className="absolute top-1/3 left-1/4 overflow-hidden pointer-events-none">
+        <div className="subliminal-text" style={{ fontSize: '3vw', opacity: 0.02 }}>
+          Clean • Professional • Radio-Ready
+        </div>
+      </div>
+      <div className="absolute bottom-1/4 right-1/6 overflow-hidden pointer-events-none">
+        <div className="subliminal-text" style={{ fontSize: '2.5vw', opacity: 0.015 }}>
+          Global Audio Solutions
+        </div>
+      </div>
+
       {/* Animated background effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 -left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-glow-pulse" />

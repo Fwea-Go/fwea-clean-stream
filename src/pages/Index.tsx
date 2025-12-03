@@ -8,7 +8,7 @@ import { DemoProgress } from "@/components/DemoProgress";
 import { ResultsView } from "@/components/ResultsView";
 import { LanguageBanner } from "@/components/LanguageBanner";
 import { Button } from "@/components/ui/button";
-import { LogOut, History as HistoryIcon, LogIn } from "lucide-react";
+import { LogOut, History as HistoryIcon, LogIn, Home, HelpCircle } from "lucide-react";
 
 type AppState = "hero" | "upload" | "analyzing" | "demo" | "results";
 
@@ -88,6 +88,15 @@ const Index = () => {
     setAppState("results");
   };
 
+  const handleGoHome = () => {
+    sessionStorage.removeItem('audioAnalysis');
+    sessionStorage.removeItem('vocalsUrl');
+    sessionStorage.removeItem('instrumentalUrl');
+    sessionStorage.removeItem('originalAudioUrl');
+    setUploadedFile(null);
+    setAppState("hero");
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -101,8 +110,30 @@ const Index = () => {
 
   return (
     <main className="min-h-screen relative pb-16">
+      {/* Top Left - Home Button */}
+      <div className="absolute top-4 left-4 z-50">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleGoHome}
+          className="gap-2 text-primary hover:text-primary/80 hover:bg-primary/10"
+        >
+          <Home className="h-4 w-4" />
+          <span className="font-bold">Fwea-I</span>
+        </Button>
+      </div>
+
       {/* Top Right Navigation */}
       <div className="absolute top-4 right-4 z-50 flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => navigate("/support")}
+          className="gap-2"
+        >
+          <HelpCircle className="h-4 w-4" />
+          <span className="hidden sm:inline">Support</span>
+        </Button>
         {user ? (
           <>
             <Button
@@ -112,7 +143,7 @@ const Index = () => {
               className="gap-2"
             >
               <HistoryIcon className="h-4 w-4" />
-              My Edits
+              <span className="hidden sm:inline">My Edits</span>
             </Button>
             <Button
               variant="outline"
@@ -121,7 +152,7 @@ const Index = () => {
               className="gap-2"
             >
               <LogOut className="h-4 w-4" />
-              Sign Out
+              <span className="hidden sm:inline">Sign Out</span>
             </Button>
           </>
         ) : (

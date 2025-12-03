@@ -1,11 +1,12 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Download, AlertCircle, Loader2 } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PaywallModal } from "./PaywallModal";
 import { AudioComparison } from "./AudioComparison";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface ExplicitWord {
   word: string;
@@ -30,6 +31,9 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   const [originalAudioUrl, setOriginalAudioUrl] = useState("");
   const [vocalsUrl, setVocalsUrl] = useState("");
   const [instrumentalUrl, setInstrumentalUrl] = useState("");
+  
+  const { isAdmin } = useAuth();
+  const adminBypass = sessionStorage.getItem('adminBypass') === 'true';
 
   const PREVIEW_LIMIT = 30; // 30 seconds free preview
 
@@ -77,8 +81,6 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
       handleGenerateClean();
     }
   }, []);
-
-  // Audio elements are now handled by AudioComparison component
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -161,6 +163,15 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
     handleGenerateClean();
   };
 
+  const handleDownloadClick = () => {
+    // Admin bypass - skip payment
+    if (isAdmin || adminBypass) {
+      handleGenerateClean();
+    } else {
+      setShowPaywall(true);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-12">
       <div className="animate-slide-up space-y-8">
@@ -173,6 +184,11 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
             {isDemo && (
               <Badge variant="outline" className="text-accent border-accent">
                 DEMO
+              </Badge>
+            )}
+            {(isAdmin || adminBypass) && (
+              <Badge variant="outline" className="text-secondary border-secondary">
+                ADMIN
               </Badge>
             )}
           </div>
@@ -241,7 +257,7 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
         <div className="flex justify-center gap-4 mt-6">
           <Button
             size="lg"
-            onClick={() => setShowPaywall(true)}
+            onClick={handleDownloadClick}
             disabled={isDemo || isGeneratingClean}
             className="bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -253,7 +269,7 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
             ) : (
               <>
                 <Download className="h-5 w-5 mr-2" />
-                Download Full Clean Version
+                {(isAdmin || adminBypass) ? "Download (Admin)" : "Download Full Clean Version"}
               </>
             )}
           </Button>
