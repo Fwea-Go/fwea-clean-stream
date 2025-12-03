@@ -4,14 +4,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
-import { Loader2 } from "lucide-react";
+import { Loader2, Home, Shield } from "lucide-react";
 
 export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [adminMode, setAdminMode] = useState(false);
   const navigate = useNavigate();
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -27,9 +29,14 @@ export default function Auth() {
 
         if (error) throw error;
 
+        // If admin mode is enabled, store it in session
+        if (adminMode) {
+          sessionStorage.setItem('adminBypass', 'true');
+        }
+
         toast({
           title: "Welcome back!",
-          description: "Successfully signed in",
+          description: adminMode ? "Signed in with admin bypass" : "Successfully signed in",
         });
         
         navigate("/");
@@ -65,6 +72,17 @@ export default function Auth() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
+      {/* Home Button */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => navigate("/")}
+        className="absolute top-4 left-4 gap-2 text-primary hover:text-primary/80"
+      >
+        <Home className="h-4 w-4" />
+        Home
+      </Button>
+
       <div className="w-full max-w-md">
         <div className="glass-card rounded-2xl p-8 animate-slide-up">
           <div className="text-center mb-8">
@@ -103,6 +121,26 @@ export default function Auth() {
                 minLength={6}
               />
             </div>
+
+            {/* Admin Mode Toggle - Only show on login */}
+            {isLogin && (
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/20 border border-border/30">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-accent" />
+                  <span className="text-sm text-muted-foreground">Admin Mode</span>
+                </div>
+                <Switch
+                  checked={adminMode}
+                  onCheckedChange={setAdminMode}
+                  disabled={loading}
+                />
+              </div>
+            )}
+            {adminMode && isLogin && (
+              <p className="text-xs text-accent text-center">
+                Admin mode bypasses payment for testing purposes
+              </p>
+            )}
 
             <Button
               type="submit"

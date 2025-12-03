@@ -20,13 +20,15 @@ All colors MUST be HSL.
     --primary: 189 100% 50%;
     --primary-foreground: 240 30% 6%;
 
-    --secondary: 300 100% 50%;
+    /* Changed from pink to feel-good green */
+    --secondary: 145 70% 45%;
     --secondary-foreground: 0 0% 98%;
 
     --muted: 240 20% 15%;
     --muted-foreground: 240 5% 65%;
 
-    --accent: 270 70% 55%;
+    /* Adjusted accent to teal for better harmony */
+    --accent: 175 60% 45%;
     --accent-foreground: 0 0% 98%;
 
     --destructive: 0 84% 60%;
@@ -39,16 +41,16 @@ All colors MUST be HSL.
     --radius: 0.75rem;
 
     --neon-cyan: 189 100% 50%;
-    --neon-pink: 300 100% 50%;
-    --neon-purple: 270 70% 55%;
+    --neon-green: 145 70% 45%;
+    --neon-teal: 175 60% 45%;
     --neon-blue: 220 100% 60%;
     
-    --gradient-cyber: linear-gradient(135deg, hsl(189 100% 50%), hsl(270 70% 55%));
-    --gradient-neon: linear-gradient(90deg, hsl(189 100% 50%), hsl(300 100% 50%));
+    --gradient-cyber: linear-gradient(135deg, hsl(189 100% 50%), hsl(175 60% 45%));
+    --gradient-neon: linear-gradient(90deg, hsl(189 100% 50%), hsl(145 70% 45%));
     --gradient-glow: linear-gradient(180deg, hsl(240 30% 8%), hsl(240 25% 12%));
     
     --shadow-neon-cyan: 0 0 20px hsl(189 100% 50% / 0.5), 0 0 40px hsl(189 100% 50% / 0.3);
-    --shadow-neon-pink: 0 0 20px hsl(300 100% 50% / 0.5), 0 0 40px hsl(300 100% 50% / 0.3);
+    --shadow-neon-green: 0 0 20px hsl(145 70% 45% / 0.5), 0 0 40px hsl(145 70% 45% / 0.3);
     --shadow-glow: 0 10px 40px hsl(189 100% 50% / 0.2);
     
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -89,5 +91,23 @@ All colors MUST be HSL.
   .glow-hover:hover {
     box-shadow: var(--shadow-neon-cyan);
     transform: translateY(-2px);
+  }
+
+  /* Subliminal background text */
+  .subliminal-text {
+    position: absolute;
+    font-size: 6vw;
+    font-weight: 900;
+    color: hsl(var(--muted) / 0.03);
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+    z-index: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .subliminal-text-rotated {
+    transform: rotate(-15deg);
   }
 }

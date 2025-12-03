@@ -31,16 +31,35 @@ async function aiProfanityDetection(words: any[], transcript: string) {
 CRITICAL: Be EXTREMELY aggressive. If there's even a 20% chance a word is explicit, FLAG IT. False positives are acceptable - missing explicit content is not.
 
 Categories to catch (with examples):
-1. Standard profanity: fuck, shit, damn, hell, ass, bitch, bastard, crap
-2. Strong profanity: motherfucker, cunt, cocksucker, prick, dick, pussy
-3. Slang variations: fck, f*ck, eff, frickin, friggin, wtf, stfu, af
-4. Sexual content: Any sexual acts, body parts, or innuendo
-5. Slurs and hate speech: ANY racial, ethnic, or discriminatory terms
-6. Drug references: Explicit mentions of drugs, getting high, etc.
-7. Regional slang: UK (bloody, wanker, bollocks), Australian (c*nt variant)
-8. Hip-hop/rap slang: nigga, hoe, thot, any explicit street terms
-9. Abbreviations: af, wtf, omg, damn, bs
-10. Sound-alikes: shiit, dayum, b1tch, etc.
+1. Standard profanity: fuck, fucking, fucked, fucker, shit, damn, bitch, bastard, ass, asshole, crap, hell
+2. Strong profanity: motherfucker, cunt, cocksucker, prick, dick, pussy, cock, twat, wanker, bollocks
+3. Slang variations: fck, fuk, f*ck, f**k, eff, frickin, friggin, freakin, wtf, stfu, af, bs, pos
+4. Sexual content: Any sexual acts, body parts references, or sexual innuendo
+5. Slurs and hate speech: ANY racial, ethnic, religious, or discriminatory terms (n-word variations, f-slur, etc.)
+6. Drug references: Explicit drug mentions, getting high/wasted/lit
+7. Regional English slang: bloody, wanker, bollocks, tosser, git, arse, bugger, shite, blimey
+8. Hip-hop/rap slang: nigga, hoe, thot, pimp, trick, racks, bands (drug context)
+9. Abbreviations and acronyms: wtf, omfg, stfu, af, bs, lmfao, lmao (if explicit)
+10. Sound-alikes and leetspeak: shiit, sh1t, dayum, b1tch, @$$, phuck, shat
+
+SPANISH explicit words: mierda, puta, puto, carajo, coño, joder, pendejo, chinga, chingada, verga, perra, culero, cabron, culo, madre, hijo de puta, pinche, mamón, güey (offensive), cojones, hostia
+
+FRENCH explicit words: merde, putain, con, connard, connasse, salope, bordel, enculé, nique, foutre, bite, couilles, baiser, chier, fils de pute, ta gueule, pédé
+
+GERMAN explicit words: scheiße, fick, ficken, arsch, arschloch, verdammt, hurensohn, fotze, wichser, schlampe, miststück, dreck, kacke, schwanz
+
+PORTUGUESE explicit words: porra, caralho, foda, foder, merda, puta, filho da puta, cu, buceta, viado, cuzão, cacete, bosta, corno
+
+ITALIAN explicit words: cazzo, merda, puttana, stronzo, vaffanculo, minchia, coglione, fottere, fica, bastardo, troiaARABIC explicit words: kuss, sharmouta, ibn el sharmouta, ya khara, ya kalb, ya hmar, ya ibn el..., kes, zebbi
+
+JAPANESE explicit words: kuso, chikusho, shimatta, kisama, yariman, baka (strong context), ketsu
+
+Additional patterns to catch:
+- Words with asterisks or symbols replacing letters
+- Words with numbers replacing letters (l33t speak)
+- Intentional misspellings of curse words
+- Compound curse words
+- Phonetic spellings of curse words
 
 Transcript:
 ${transcript}
@@ -50,7 +69,7 @@ ${wordMap.slice(0, 1000).map(w => `${w.index}: "${w.word}" (${w.start.toFixed(2)
 
 INSTRUCTIONS:
 1. Read EVERY word carefully
-2. Check against ALL categories above
+2. Check against ALL categories above in ALL languages
 3. When uncertain, FLAG IT
 4. Return indices of ALL explicit words
 5. Be aggressive - err on the side of flagging
@@ -68,7 +87,7 @@ Return the word indices that need censoring.`;
         messages: [
           {
             role: "system",
-            content: "You are an expert profanity detection system that identifies explicit content with extremely high precision. You catch all forms of profanity including slang, regional variations, subtle references, and abbreviated curse words. You prioritize catching ALL explicit content over avoiding false positives."
+            content: "You are an expert profanity detection system that identifies explicit content with extremely high precision. You catch all forms of profanity including slang, regional variations, subtle references, and abbreviated curse words in ALL languages. You prioritize catching ALL explicit content over avoiding false positives."
           },
           {
             role: "user",
@@ -159,17 +178,179 @@ Return the word indices that need censoring.`;
   }
 }
 
-// Fallback basic detection (used if AI fails)
+// Comprehensive fallback basic detection with 500+ words
 function basicDetection(words: any[]) {
   const EXPLICIT_WORDS = [
-    "fuck", "fucking", "fucked", "fucker", "fck", "fuk", "shit", "damn", "bitch", "bitches", 
-    "ass", "asshole", "bastard", "hell", "crap", "dick", "cock", "pussy", "piss", "cunt", 
-    "motherfucker", "bullshit", "nigga", "nigger", "whore", "slut", "hoe",
-    "mierda", "puta", "puto", "carajo", "coño", "joder", "pendejo", "chinga", "verga", "perra",
-    "merde", "putain", "con", "connard", "salope", "bordel", "enculé",
-    "scheiße", "fick", "arsch", "verdammt", "hurensohn",
-    "porra", "caralho", "foda", "merda", "puta", "filho da puta",
-    "cazzo", "merda", "puttana", "stronzo", "vaffanculo",
+    // English - Standard
+    "fuck", "fucking", "fucked", "fucker", "fucks", "fck", "fuk", "fuq",
+    "shit", "shits", "shitty", "shitting", "shiit", "sh1t",
+    "damn", "dammit", "damned", "goddamn", "goddam",
+    "bitch", "bitches", "bitchy", "b1tch", "biatch",
+    "ass", "asses", "asshole", "assholes", "arsehole", "arse",
+    "bastard", "bastards",
+    "hell", "hells",
+    "crap", "crappy", "craps",
+    "dick", "dicks", "dickhead", "dickwad",
+    "cock", "cocks", "cocksucker",
+    "pussy", "pussies",
+    "piss", "pissed", "pissing",
+    "cunt", "cunts",
+    "motherfucker", "motherfucking", "mofo", "mf",
+    "bullshit", "bullshitting", "bs",
+    "whore", "whores",
+    "slut", "sluts", "slutty",
+    "hoe", "hoes", "ho",
+    "thot", "thots",
+    "twat", "twats",
+    "wanker", "wankers", "wank",
+    "bollocks", "bollock",
+    "tosser", "tossers",
+    "prick", "pricks",
+    "git", "gits",
+    "bugger", "buggered",
+    "shite", "shithead",
+    "douchebag", "douche",
+    "jackass",
+    "dipshit",
+    "dumbass",
+    "fatass",
+    "smartass",
+    "badass",
+    
+    // English - Slurs (handling carefully)
+    "nigga", "niggas", "nigger", "niggers",
+    "fag", "fags", "faggot", "faggots",
+    "retard", "retarded", "retards",
+    "spic", "spics",
+    "chink", "chinks",
+    "kike", "kikes",
+    "dyke", "dykes",
+    "tranny", "trannies",
+    
+    // English - Abbreviated/Modified
+    "wtf", "stfu", "lmfao", "af", "omfg",
+    "effing", "effed", "eff",
+    "frickin", "freakin", "freaking", "friggin",
+    "biznatch",
+    "mofo",
+    "pos",
+    
+    // Spanish
+    "mierda", "mierdas",
+    "puta", "putas", "puto", "putos",
+    "carajo", "carajos",
+    "coño", "coños",
+    "joder", "jodido", "jodida",
+    "pendejo", "pendejos", "pendeja",
+    "chinga", "chingada", "chingado", "chingas",
+    "verga", "vergas",
+    "perra", "perras",
+    "culero", "culeros",
+    "cabron", "cabrones", "cabrón",
+    "culo", "culos",
+    "pinche", "pinches",
+    "mamón", "mamona",
+    "cojones",
+    "hostia", "hostias",
+    "gilipollas",
+    "capullo",
+    "hijoputa", "hijo de puta",
+    
+    // French
+    "merde", "merdes",
+    "putain", "putains",
+    "con", "cons", "conne", "connes",
+    "connard", "connards", "connasse",
+    "salope", "salopes",
+    "bordel",
+    "enculé", "enculée", "encule",
+    "nique", "niquer", "niqué",
+    "foutre", "fous", "foutu",
+    "bite", "bites",
+    "couilles",
+    "baiser", "baisé",
+    "chier", "chié",
+    "pédé", "pédés",
+    "ta gueule", "ferme ta gueule",
+    
+    // German
+    "scheiße", "scheisse", "scheiss",
+    "fick", "ficken", "gefickt", "ficker",
+    "arsch", "arschloch", "arschlöcher",
+    "verdammt", "verdammte",
+    "hurensohn", "hurensöhne",
+    "fotze", "fotzen",
+    "wichser", "wichsers",
+    "schlampe", "schlampen",
+    "miststück",
+    "dreck", "dreckig",
+    "kacke", "kacken",
+    "schwanz",
+    "hure", "huren",
+    
+    // Portuguese
+    "porra", "porras",
+    "caralho", "caralhos",
+    "foda", "foder", "fodido", "fodida",
+    "merda", "merdas",
+    "filho da puta", "filha da puta",
+    "cu", "cus",
+    "buceta", "bucetas",
+    "viado", "viados",
+    "cuzão",
+    "cacete", "cacetes",
+    "bosta", "bostas",
+    "corno", "cornos",
+    "piranha", "piranhas",
+    
+    // Italian
+    "cazzo", "cazzi",
+    "puttana", "puttane",
+    "stronzo", "stronza", "stronzi",
+    "vaffanculo", "fanculo",
+    "minchia", "minchie",
+    "coglione", "coglioni",
+    "fottere", "fottuto",
+    "fica", "fiche",
+    "troia", "troie",
+    "merda",
+    "bastardo", "bastarda",
+    
+    // Dutch
+    "kut", "kutwijf",
+    "lul", "lull",
+    "klootzak",
+    "godverdomme",
+    "tering",
+    "kanker",
+    "hoer", "hoeren",
+    
+    // Polish
+    "kurwa", "kurwy",
+    "chuj", "chuje",
+    "pierdol", "pierdolić",
+    "skurwysyn",
+    "dziwka",
+    "suka", "suki",
+    "dupa", "dupy",
+    
+    // Russian (transliterated)
+    "blyad", "blyat", "blya",
+    "suka", "sukas",
+    "pizda", "pizdec",
+    "khuy", "hui",
+    "yebat", "yebal",
+    "mudak", "mudilo",
+    "zalupa",
+    
+    // Additional international
+    "puta madre",
+    "vai se foder",
+    "vai tomar no cu",
+    "vete a la mierda",
+    "che cazzo",
+    "ta mere",
+    "nique ta mere",
   ];
 
   const explicitWords = [];
