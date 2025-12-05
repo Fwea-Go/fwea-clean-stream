@@ -9,7 +9,7 @@ import { toast } from "@/hooks/use-toast";
 import { Loader2, Home, Shield } from "lucide-react";
 
 // Secret admin emails - only these can access admin mode
-const ADMIN_EMAILS = ["admin@fweai.com", "creator@fweai.com"];
+const ADMIN_EMAILS = ["admin@fweai.com", "creator@fweai.com", "fwea.ip@gmail.com"];
 const ADMIN_SECRET_PARAM = "fweai2024";
 
 export default function Auth() {
