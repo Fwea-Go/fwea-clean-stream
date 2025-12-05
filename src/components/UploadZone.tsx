@@ -1,15 +1,36 @@
 import { useCallback, useState } from "react";
-import { Upload, FileAudio } from "lucide-react";
+import { Upload, FileAudio, Video } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 
 interface UploadZoneProps {
-  onFileUpload: (file: File) => void;
+  onFileUpload: (file: File, isVideo?: boolean) => void;
 }
 
 export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const { toast } = useToast();
+
+  const isValidFileType = (file: File) => {
+    const audioTypes = ['audio/mpeg', 'audio/wav', 'audio/flac', 'audio/ogg', 'audio/mp4', 'audio/x-m4a', 'audio/aac'];
+    const videoTypes = ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-msvideo'];
+    
+    return file.type.startsWith("audio/") || 
+           file.type.startsWith("video/") ||
+           audioTypes.includes(file.type) || 
+           videoTypes.includes(file.type) ||
+           file.name.toLowerCase().endsWith('.m4a') ||
+           file.name.toLowerCase().endsWith('.mp4') ||
+           file.name.toLowerCase().endsWith('.mov') ||
+           file.name.toLowerCase().endsWith('.webm');
+  };
+
+  const isVideoFile = (file: File) => {
+    return file.type.startsWith("video/") || 
+           file.name.toLowerCase().endsWith('.mp4') ||
+           file.name.toLowerCase().endsWith('.mov') ||
+           file.name.toLowerCase().endsWith('.webm');
+  };
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -19,10 +40,10 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
       const file = e.dataTransfer.files[0];
       if (!file) return;
       
-      if (!file.type.startsWith("audio/")) {
+      if (!isValidFileType(file)) {
         toast({
           title: "Invalid file type",
-          description: "Please upload an audio file (MP3, WAV, etc.)",
+          description: "Please upload an audio file (MP3, WAV, M4A, etc.) or video file (MP4, MOV, WebM)",
           variant: "destructive",
         });
         return;
@@ -47,8 +68,16 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
           variant: "default",
         });
       }
+
+      // Show video conversion message
+      if (isVideoFile(file)) {
+        toast({
+          title: "Video detected",
+          description: "We'll extract the audio from your video automatically.",
+        });
+      }
       
-      onFileUpload(file);
+      onFileUpload(file, isVideoFile(file));
     },
     [onFileUpload, toast]
   );
@@ -57,6 +86,15 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
+        if (!isValidFileType(file)) {
+          toast({
+            title: "Invalid file type",
+            description: "Please upload an audio file (MP3, WAV, M4A, etc.) or video file (MP4, MOV, WebM)",
+            variant: "destructive",
+          });
+          return;
+        }
+
         // Check file size (100MB limit as stated in UI)
         const fileSizeMB = file.size / (1024 * 1024);
         if (fileSizeMB > 100) {
@@ -76,8 +114,16 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
             variant: "default",
           });
         }
+
+        // Show video conversion message
+        if (isVideoFile(file)) {
+          toast({
+            title: "Video detected",
+            description: "We'll extract the audio from your video automatically.",
+          });
+        }
         
-        onFileUpload(file);
+        onFileUpload(file, isVideoFile(file));
       }
     },
     [onFileUpload, toast]
@@ -90,7 +136,7 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
           Upload Your <span className="text-primary neon-text">Vocal Recording</span>
         </h2>
         <p className="text-muted-foreground text-lg mb-2">
-          Drag and drop your audio file, or click to browse
+          Drag and drop your audio or video file, or click to browse
         </p>
         <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground mt-3">
           <span>🎤 Works best with:</span>
@@ -121,7 +167,7 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
       >
         <input
           type="file"
-          accept="audio/*"
+          accept="audio/*,video/mp4,video/quicktime,video/webm,.m4a,.mp4,.mov,.webm"
           onChange={handleFileInput}
           className="hidden"
         />
@@ -139,16 +185,23 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
           </div>
 
           <p className="text-2xl font-bold mb-3 text-foreground">
-            {isDragging ? "Drop it here!" : "Drag & Drop Audio File"}
+            {isDragging ? "Drop it here!" : "Drag & Drop Audio or Video"}
           </p>
           <p className="text-muted-foreground mb-6">or</p>
           <div className="px-6 py-3 rounded-lg border-2 border-primary bg-primary/10 text-primary font-semibold group-hover:bg-primary/20 transition-colors">
             Browse Files
           </div>
 
-          <div className="mt-8 text-sm text-muted-foreground">
-            <p>Supported formats: MP3, WAV, FLAC, OGG</p>
-            <p className="mt-1">Max file size: 100MB • Recommended: 2-3 minute clips</p>
+          <div className="mt-8 text-sm text-muted-foreground space-y-1">
+            <p className="flex items-center justify-center gap-2">
+              <FileAudio className="h-4 w-4" />
+              Audio: MP3, WAV, M4A, FLAC, OGG, AAC
+            </p>
+            <p className="flex items-center justify-center gap-2">
+              <Video className="h-4 w-4" />
+              Video: MP4, MOV, WebM (auto-converted to audio)
+            </p>
+            <p className="mt-2 text-xs">Max file size: 100MB • Recommended: 2-3 minute clips</p>
           </div>
         </div>
       </label>

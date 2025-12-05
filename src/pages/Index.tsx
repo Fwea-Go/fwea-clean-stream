@@ -60,12 +60,19 @@ const Index = () => {
     setAppState("results");
   };
 
-  const handleFileUpload = (file: File) => {
+  const handleFileUpload = (file: File, isVideo?: boolean) => {
     // Clear previous analysis data
     sessionStorage.removeItem('audioAnalysis');
     sessionStorage.removeItem('vocalsUrl');
     sessionStorage.removeItem('instrumentalUrl');
     sessionStorage.removeItem('originalAudioUrl');
+    
+    // Store if this is a video file for processing
+    if (isVideo) {
+      sessionStorage.setItem('isVideoFile', 'true');
+    } else {
+      sessionStorage.removeItem('isVideoFile');
+    }
     
     // Store original audio URL for comparison
     const originalUrl = URL.createObjectURL(file);

@@ -20,15 +20,15 @@ All colors MUST be HSL.
     --primary: 189 100% 50%;
     --primary-foreground: 240 30% 6%;
 
-    /* Changed from pink to feel-good green */
-    --secondary: 145 70% 45%;
-    --secondary-foreground: 0 0% 98%;
+    /* Beachy beige to complement the ocean blue */
+    --secondary: 35 55% 65%;
+    --secondary-foreground: 240 30% 6%;
 
     --muted: 240 20% 15%;
     --muted-foreground: 240 5% 65%;
 
-    /* Adjusted accent to teal for better harmony */
-    --accent: 175 60% 45%;
+    /* Warm sand accent */
+    --accent: 28 60% 55%;
     --accent-foreground: 0 0% 98%;
 
     --destructive: 0 84% 60%;
@@ -41,16 +41,16 @@ All colors MUST be HSL.
     --radius: 0.75rem;
 
     --neon-cyan: 189 100% 50%;
-    --neon-green: 145 70% 45%;
-    --neon-teal: 175 60% 45%;
+    --neon-sand: 35 55% 65%;
+    --neon-warm: 28 60% 55%;
     --neon-blue: 220 100% 60%;
     
-    --gradient-cyber: linear-gradient(135deg, hsl(189 100% 50%), hsl(175 60% 45%));
-    --gradient-neon: linear-gradient(90deg, hsl(189 100% 50%), hsl(145 70% 45%));
+    --gradient-cyber: linear-gradient(135deg, hsl(189 100% 50%), hsl(28 60% 55%));
+    --gradient-neon: linear-gradient(90deg, hsl(189 100% 50%), hsl(35 55% 65%));
     --gradient-glow: linear-gradient(180deg, hsl(240 30% 8%), hsl(240 25% 12%));
     
     --shadow-neon-cyan: 0 0 20px hsl(189 100% 50% / 0.5), 0 0 40px hsl(189 100% 50% / 0.3);
-    --shadow-neon-green: 0 0 20px hsl(145 70% 45% / 0.5), 0 0 40px hsl(145 70% 45% / 0.3);
+    --shadow-neon-sand: 0 0 20px hsl(35 55% 65% / 0.5), 0 0 40px hsl(35 55% 65% / 0.3);
     --shadow-glow: 0 10px 40px hsl(189 100% 50% / 0.2);
     
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
