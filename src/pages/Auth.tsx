@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,13 +8,37 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import { Loader2, Home, Shield } from "lucide-react";
 
+// Secret admin emails - only these can access admin mode
+const ADMIN_EMAILS = ["admin@fweai.com", "creator@fweai.com"];
+const ADMIN_SECRET_PARAM = "fweai2024";
+
 export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [adminMode, setAdminMode] = useState(false);
+  const [showAdminToggle, setShowAdminToggle] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Check if admin toggle should be visible
+  useEffect(() => {
+    const adminParam = searchParams.get('admin');
+    if (adminParam === ADMIN_SECRET_PARAM) {
+      setShowAdminToggle(true);
+    }
+  }, [searchParams]);
+
+  // Also show admin toggle when admin email is typed
+  useEffect(() => {
+    const isAdminEmail = ADMIN_EMAILS.some(adminEmail => 
+      email.toLowerCase() === adminEmail.toLowerCase()
+    );
+    if (isAdminEmail) {
+      setShowAdminToggle(true);
+    }
+  }, [email]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,15 +53,31 @@ export default function Auth() {
 
         if (error) throw error;
 
-        // If admin mode is enabled, store it in session
+        // If admin mode is enabled, verify user has admin role before granting bypass
         if (adminMode) {
-          sessionStorage.setItem('adminBypass', 'true');
+          const { data: roleData, error: roleError } = await supabase
+            .rpc('has_role', { _user_id: data.user.id, _role: 'admin' });
+          
+          if (roleError || !roleData) {
+            console.warn("Admin mode requested but user lacks admin role");
+            toast({
+              title: "Admin access denied",
+              description: "You don't have admin privileges",
+              variant: "destructive",
+            });
+          } else {
+            sessionStorage.setItem('adminBypass', 'true');
+            toast({
+              title: "Welcome back, Admin!",
+              description: "Signed in with admin bypass enabled",
+            });
+          }
+        } else {
+          toast({
+            title: "Welcome back!",
+            description: "Successfully signed in",
+          });
         }
-
-        toast({
-          title: "Welcome back!",
-          description: adminMode ? "Signed in with admin bypass" : "Successfully signed in",
-        });
         
         navigate("/");
       } else {
@@ -122,24 +162,26 @@ export default function Auth() {
               />
             </div>
 
-            {/* Admin Mode Toggle - Only show on login */}
-            {isLogin && (
-              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/20 border border-border/30">
-                <div className="flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-accent" />
-                  <span className="text-sm text-muted-foreground">Admin Mode</span>
+            {/* Admin Mode Toggle - Only show for authorized access */}
+            {isLogin && showAdminToggle && (
+              <>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/20 border border-border/30">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-accent" />
+                    <span className="text-sm text-muted-foreground">Admin Mode</span>
+                  </div>
+                  <Switch
+                    checked={adminMode}
+                    onCheckedChange={setAdminMode}
+                    disabled={loading}
+                  />
                 </div>
-                <Switch
-                  checked={adminMode}
-                  onCheckedChange={setAdminMode}
-                  disabled={loading}
-                />
-              </div>
-            )}
-            {adminMode && isLogin && (
-              <p className="text-xs text-accent text-center">
-                Admin mode bypasses payment for testing purposes
-              </p>
+                {adminMode && (
+                  <p className="text-xs text-accent text-center">
+                    Admin mode bypasses payment for testing purposes
+                  </p>
+                )}
+              </>
             )}
 
             <Button

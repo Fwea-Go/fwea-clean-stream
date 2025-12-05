@@ -22,8 +22,8 @@ export const LanguageBanner = () => {
     "🇬🇷 Greek",
   ];
 
-  // Duplicate the languages array for seamless infinite scroll
-  const duplicatedLanguages = [...languages, ...languages, ...languages];
+  // Duplicate the languages array exactly 2x for seamless infinite scroll
+  const duplicatedLanguages = [...languages, ...languages];
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 backdrop-blur-sm border-t border-primary/20 py-3 overflow-hidden z-40">

@@ -8,6 +8,19 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Chunked base64 encoding to prevent stack overflow on large files
+function arrayBufferToBase64(buffer: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < buffer.length; i += chunkSize) {
+    const chunk = buffer.subarray(i, Math.min(i + chunkSize, buffer.length));
+    for (let j = 0; j < chunk.length; j++) {
+      binary += String.fromCharCode(chunk[j]);
+    }
+  }
+  return btoa(binary);
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -49,33 +62,47 @@ serve(async (req) => {
     console.log("[GENERATE-CLEAN] Processing:", { vocalsPath, instrumentalPath, wordCount: explicitWords.length });
 
     // Download stems from storage
+    console.log("[GENERATE-CLEAN] Downloading vocals...");
     const { data: vocalsData, error: vocalsError } = await supabaseClient.storage
       .from("audio-files")
       .download(vocalsPath);
 
     if (vocalsError || !vocalsData) {
+      console.error("[GENERATE-CLEAN] Vocals download failed:", vocalsError);
       throw new Error(`Failed to download vocals: ${vocalsError?.message}`);
     }
+    console.log("[GENERATE-CLEAN] Vocals downloaded, size:", vocalsData.size);
 
+    console.log("[GENERATE-CLEAN] Downloading instrumental...");
     const { data: instrumentalData, error: instrumentalError } = await supabaseClient.storage
       .from("audio-files")
       .download(instrumentalPath);
 
     if (instrumentalError || !instrumentalData) {
+      console.error("[GENERATE-CLEAN] Instrumental download failed:", instrumentalError);
       throw new Error(`Failed to download instrumental: ${instrumentalError?.message}`);
     }
+    console.log("[GENERATE-CLEAN] Instrumental downloaded, size:", instrumentalData.size);
 
-    console.log("[GENERATE-CLEAN] Stems downloaded");
+    console.log("[GENERATE-CLEAN] Stems downloaded successfully");
 
-    // Convert to base64 for Replicate
+    // Convert to base64 for Replicate using chunked encoding (prevents stack overflow)
+    console.log("[GENERATE-CLEAN] Converting vocals to base64...");
     const vocalsBytes = new Uint8Array(await vocalsData.arrayBuffer());
+    console.log("[GENERATE-CLEAN] Vocals bytes:", vocalsBytes.length);
+    const vocalsBase64 = arrayBufferToBase64(vocalsBytes);
+    console.log("[GENERATE-CLEAN] Vocals base64 length:", vocalsBase64.length);
+
+    console.log("[GENERATE-CLEAN] Converting instrumental to base64...");
     const instrumentalBytes = new Uint8Array(await instrumentalData.arrayBuffer());
+    console.log("[GENERATE-CLEAN] Instrumental bytes:", instrumentalBytes.length);
+    const instrumentalBase64 = arrayBufferToBase64(instrumentalBytes);
+    console.log("[GENERATE-CLEAN] Instrumental base64 length:", instrumentalBase64.length);
     
-    const vocalsBase64 = btoa(String.fromCharCode(...vocalsBytes));
-    const instrumentalBase64 = btoa(String.fromCharCode(...instrumentalBytes));
-    
-    const vocalsDataUri = `data:audio/wav;base64,${vocalsBase64}`;
-    const instrumentalDataUri = `data:audio/wav;base64,${instrumentalBase64}`;
+    const vocalsDataUri = `data:audio/mp3;base64,${vocalsBase64}`;
+    const instrumentalDataUri = `data:audio/mp3;base64,${instrumentalBase64}`;
+
+    console.log("[GENERATE-CLEAN] Base64 conversion complete");
 
     // Initialize Replicate
     const replicateKey = Deno.env.get("REPLICATE_API_KEY");
@@ -87,62 +114,87 @@ serve(async (req) => {
     console.log("[GENERATE-CLEAN] Building mute segments with padding");
 
     // Build muting segments for each explicit word with padding
-    const muteSegments = explicitWords.map((word: any, idx: number) => ({
-      index: idx,
-      word: word.word,
-      start: parseFloat(word.timestamp?.toFixed(3) || word.start?.toFixed(3) || "0"),
-      end: parseFloat(word.end?.toFixed(3) || "0"),
-      muteStart: Math.max(0, parseFloat((word.timestamp || word.start || 0).toFixed(3))),
-      muteEnd: parseFloat((word.end || 0).toFixed(3)),
-    }));
+    const muteSegments = explicitWords.map((word: any, idx: number) => {
+      const start = word.timestamp || word.start || 0;
+      const end = word.end || (start + 0.5);
+      return {
+        index: idx,
+        word: word.word,
+        start: parseFloat(start.toFixed(3)),
+        end: parseFloat(end.toFixed(3)),
+        muteStart: Math.max(0, parseFloat((start - 0.1).toFixed(3))),
+        muteEnd: parseFloat((end + 0.2).toFixed(3)),
+      };
+    });
 
     console.log("[GENERATE-CLEAN] Will mute", muteSegments.length, "segments:", JSON.stringify(muteSegments.slice(0, 5)));
 
     // Build FFmpeg volume filter to mute explicit segments
-    const volumeFilters = muteSegments.map((seg: any) => 
-      `volume=enable='between(t,${seg.muteStart},${seg.muteEnd})':volume=0`
-    ).join(',');
+    let volumeFilters = "volume=1.0";
+    if (muteSegments.length > 0) {
+      volumeFilters = muteSegments.map((seg: any) => 
+        `volume=enable='between(t,${seg.muteStart},${seg.muteEnd})':volume=0`
+      ).join(',');
+    }
 
-    console.log("[GENERATE-CLEAN] FFmpeg filter:", volumeFilters.substring(0, 200) + "...");
+    console.log("[GENERATE-CLEAN] FFmpeg filter:", volumeFilters.substring(0, 300));
 
-    // Step 1: Apply muting to vocals
-    console.log("[GENERATE-CLEAN] Step 1: Muting vocals...");
-    const mutedVocalsOutput = await replicate.run(
-      "chenxwh/ffmpeg:latest",
-      {
-        input: {
-          audio: vocalsDataUri,
-          audio_filter: volumeFilters || "volume=1.0",
-          output_format: "mp3",
+    // Step 1: Apply muting to vocals using FFmpeg
+    console.log("[GENERATE-CLEAN] Step 1: Muting vocals with FFmpeg...");
+    let mutedVocalsOutput: string;
+    
+    try {
+      const ffmpegResult = await replicate.run(
+        "chenxwh/ffmpeg:latest",
+        {
+          input: {
+            audio: vocalsDataUri,
+            audio_filter: volumeFilters,
+            output_format: "mp3",
+          }
         }
-      }
-    ) as string;
-
-    console.log("[GENERATE-CLEAN] Muted vocals URL:", mutedVocalsOutput);
+      );
+      mutedVocalsOutput = ffmpegResult as string;
+      console.log("[GENERATE-CLEAN] Muted vocals URL:", mutedVocalsOutput);
+    } catch (ffmpegError) {
+      console.error("[GENERATE-CLEAN] FFmpeg muting failed:", ffmpegError);
+      throw new Error(`FFmpeg vocal muting failed: ${ffmpegError}`);
+    }
 
     // Step 2: Merge muted vocals with instrumental
     console.log("[GENERATE-CLEAN] Step 2: Merging with instrumental...");
-    const finalOutput = await replicate.run(
-      "chenxwh/ffmpeg:latest",
-      {
-        input: {
-          audio: instrumentalDataUri,
-          audio_overlay: mutedVocalsOutput,
-          audio_filter: "amix=inputs=2:duration=first",
-          output_format: "mp3",
+    let finalOutput: string;
+    
+    try {
+      const mergeResult = await replicate.run(
+        "chenxwh/ffmpeg:latest",
+        {
+          input: {
+            audio: instrumentalDataUri,
+            audio_overlay: mutedVocalsOutput,
+            audio_filter: "amix=inputs=2:duration=first:dropout_transition=0",
+            output_format: "mp3",
+          }
         }
-      }
-    ) as string;
-
-    console.log("[GENERATE-CLEAN] Final clean audio URL:", finalOutput);
+      );
+      finalOutput = mergeResult as string;
+      console.log("[GENERATE-CLEAN] Final clean audio URL:", finalOutput);
+    } catch (mergeError) {
+      console.error("[GENERATE-CLEAN] FFmpeg merge failed:", mergeError);
+      throw new Error(`FFmpeg merge failed: ${mergeError}`);
+    }
 
     // Download the final clean audio
+    console.log("[GENERATE-CLEAN] Downloading final audio from Replicate...");
     const cleanAudioResponse = await fetch(finalOutput);
     if (!cleanAudioResponse.ok) {
-      throw new Error("Failed to download clean audio from Replicate");
+      console.error("[GENERATE-CLEAN] Failed to download from Replicate:", cleanAudioResponse.status);
+      throw new Error(`Failed to download clean audio from Replicate: ${cleanAudioResponse.status}`);
     }
 
     const cleanAudioBlob = await cleanAudioResponse.blob();
+    console.log("[GENERATE-CLEAN] Downloaded clean audio, size:", cleanAudioBlob.size);
+    
     const cleanAudioBytes = new Uint8Array(await cleanAudioBlob.arrayBuffer());
 
     // Upload to Supabase Storage
@@ -189,7 +241,7 @@ serve(async (req) => {
       throw dbError;
     }
 
-    console.log("[GENERATE-CLEAN] Database record created:", cleanRecord.id);
+    console.log("[GENERATE-CLEAN] SUCCESS! Database record created:", cleanRecord.id);
 
     return new Response(
       JSON.stringify({
