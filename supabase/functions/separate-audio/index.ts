@@ -76,9 +76,9 @@ serve(async (req) => {
     // Use Spleeter for fast, high-quality source separation
     let output: any;
     try {
-      // Set a reasonable timeout (2 minutes)
+      // Set a longer timeout (5 minutes) to handle longer processing times
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Audio separation timed out after 2 minutes')), 120000)
+        setTimeout(() => reject(new Error('Audio separation timed out after 5 minutes')), 300000)
       );
 
       const separationPromise = replicate.run(
@@ -99,7 +99,7 @@ serve(async (req) => {
       console.error("[SEPARATE-AUDIO] Error details:", JSON.stringify(replicateError, null, 2));
       
       if (replicateError.message?.includes('timed out')) {
-        throw new Error("Audio separation is taking longer than expected. This can happen with longer songs. Please try with a shorter audio file (under 2 minutes).");
+        throw new Error("Audio separation is taking longer than expected. This can happen with longer songs. Please try with a shorter audio file (under 3 minutes).");
       }
       
       if (replicateError.response?.status === 402) {
