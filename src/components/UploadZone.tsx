@@ -100,12 +100,12 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
           return;
         }
 
-        // Check file size (100MB limit as stated in UI)
+        // Check file size (25MB limit as stated in UI)
         const fileSizeMB = file.size / (1024 * 1024);
         if (fileSizeMB > 100) {
           toast({
             title: "File too large",
-            description: `File size is ${fileSizeMB.toFixed(1)}MB. Maximum is 100MB.`,
+            description: `File size is ${fileSizeMB.toFixed(1)}MB. Maximum is 25MB.`,
             variant: "destructive",
           });
           return;
@@ -213,7 +213,7 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
               <Video className="h-4 w-4" />
               Video: MP4, MOV, WebM (auto-converted to audio)
             </p>
-            <p className="mt-2 text-xs">Max file size: 100MB • Recommended: 2-3 minute clips</p>
+            <p className="mt-2 text-xs">Max file size: 25MB • Recommended: 2-3 minute clips</p>
           </div>
         </div>
       </label>
