@@ -4,10 +4,9 @@ import { Download, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PaywallModal } from "./PaywallModal";
 import { AudioComparison } from "./AudioComparison";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-
+import { renderCleanAudio, sanitizeFilename, downloadBlob, RenderProgress } from "@/utils/cleanAudioRenderer";
 interface ExplicitWord {
   word: string;
   timestamp: number;
@@ -28,6 +27,7 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
   const [duration, setDuration] = useState(180);
   const [isDemo, setIsDemo] = useState(false);
   const [isGeneratingClean, setIsGeneratingClean] = useState(false);
+  const [renderProgress, setRenderProgress] = useState<RenderProgress | null>(null);
   const [originalAudioUrl, setOriginalAudioUrl] = useState("");
   const [vocalsUrl, setVocalsUrl] = useState("");
   const [instrumentalUrl, setInstrumentalUrl] = useState("");
@@ -90,71 +90,58 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
 
   const handleGenerateClean = async () => {
     setIsGeneratingClean(true);
+    setRenderProgress(null);
+    
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast({
-          title: "Authentication Required",
-          description: "Please sign in to download",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const vocalsPath = sessionStorage.getItem('vocalsStoragePath');
-      const instrumentalPath = sessionStorage.getItem('instrumentalStoragePath');
-
-      if (!vocalsPath || !instrumentalPath) {
+      // Use client-side rendering - no backend required!
+      if (!vocalsUrl || !instrumentalUrl) {
         throw new Error("Missing audio stems");
       }
 
       toast({
         title: "Generating Clean Version",
-        description: "This may take a few minutes...",
+        description: "Processing audio in your browser...",
       });
 
-      const { data, error } = await supabase.functions.invoke("generate-clean-audio", {
-        body: {
-          vocalsPath,
-          instrumentalPath,
-          explicitWords: detectedWords,
-          fileName,
-        },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
+      // Convert explicit words to mute regions
+      const muteRegions = detectedWords.map(word => ({
+        start: word.timestamp,
+        end: word.end,
+      }));
+
+      // Render clean audio client-side
+      const mp3Blob = await renderCleanAudio(
+        vocalsUrl,
+        instrumentalUrl,
+        muteRegions,
+        (progress) => {
+          setRenderProgress(progress);
+        }
+      );
+
+      // Generate clean filename
+      const cleanName = `${sanitizeFilename(fileName)}-clean.mp3`;
+      
+      toast({
+        title: "Clean Version Ready!",
+        description: "Your download will start automatically.",
       });
 
-      if (error) throw error;
-
-      if (data?.downloadUrl && data?.fileName) {
-        toast({
-          title: "Clean Version Ready!",
-          description: "Your download will start automatically.",
-        });
-
-        // Trigger automatic download
-        const link = document.createElement('a');
-        link.href = data.downloadUrl;
-        link.download = data.fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        console.log("Clean audio downloaded:", data.fileName);
-      } else {
-        throw new Error("No download URL received");
-      }
+      // Trigger download
+      downloadBlob(mp3Blob, cleanName);
+      
+      console.log("Clean audio downloaded:", cleanName);
       
     } catch (error) {
       console.error("Clean generation error:", error);
       toast({
         title: "Generation Error",
-        description: "Failed to generate clean version. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to generate clean version. Please try again.",
         variant: "destructive",
       });
     } finally {
       setIsGeneratingClean(false);
+      setRenderProgress(null);
     }
   };
 
@@ -264,7 +251,7 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
             {isGeneratingClean ? (
               <>
                 <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                Generating...
+                {renderProgress ? renderProgress.message : "Generating..."}
               </>
             ) : (
               <>
