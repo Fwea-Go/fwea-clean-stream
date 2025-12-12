@@ -1,9 +1,7 @@
 /**
  * Client-side audio renderer that creates clean versions by muting explicit segments
- * Uses OfflineAudioContext for precise rendering and lamejs for MP3 encoding
+ * Uses OfflineAudioContext for precise rendering and native WAV encoding (no dependencies)
  */
-
-import lamejs from 'lamejs';
 
 export interface MuteRegion {
   start: number;
@@ -39,8 +37,7 @@ async function loadAudioBuffer(
 function createVolumeAutomation(
   gainNode: GainNode,
   muteRegions: MuteRegion[],
-  duration: number,
-  sampleRate: number
+  duration: number
 ): void {
   const gain = gainNode.gain;
   
@@ -50,16 +47,33 @@ function createVolumeAutomation(
   // Sort regions by start time
   const sortedRegions = [...muteRegions].sort((a, b) => a.start - b.start);
   
+  // Merge overlapping regions
+  const mergedRegions: MuteRegion[] = [];
   for (const region of sortedRegions) {
-    const muteStart = Math.max(0, region.start - 0.05); // 50ms fade
-    const muteEnd = Math.min(duration, region.end + 0.05);
+    if (mergedRegions.length === 0) {
+      mergedRegions.push({ ...region });
+    } else {
+      const last = mergedRegions[mergedRegions.length - 1];
+      if (region.start <= last.end + 0.1) {
+        // Merge overlapping or adjacent regions
+        last.end = Math.max(last.end, region.end);
+      } else {
+        mergedRegions.push({ ...region });
+      }
+    }
+  }
+  
+  for (const region of mergedRegions) {
+    const fadeTime = 0.03; // 30ms fade
+    const muteStart = Math.max(0, region.start - fadeTime);
+    const muteEnd = Math.min(duration, region.end + fadeTime);
     
     // Fade out before mute
     gain.setValueAtTime(1, muteStart);
-    gain.linearRampToValueAtTime(0, muteStart + 0.03);
+    gain.linearRampToValueAtTime(0, muteStart + fadeTime);
     
     // Stay muted
-    gain.setValueAtTime(0, muteEnd - 0.03);
+    gain.setValueAtTime(0, muteEnd - fadeTime);
     
     // Fade back in after mute
     gain.linearRampToValueAtTime(1, muteEnd);
@@ -67,59 +81,85 @@ function createVolumeAutomation(
 }
 
 /**
- * Encode AudioBuffer to MP3 using lamejs
+ * Interleave stereo channels for WAV encoding
  */
-function encodeToMp3(
-  audioBuffer: AudioBuffer,
-  onProgress?: (progress: number) => void
-): Blob {
-  const sampleRate = audioBuffer.sampleRate;
+function interleaveChannels(audioBuffer: AudioBuffer): Float32Array {
   const numChannels = audioBuffer.numberOfChannels;
-  const samples = audioBuffer.length;
+  const length = audioBuffer.length;
+  const result = new Float32Array(length * numChannels);
   
-  // Target ~128kbps for good quality/size balance
-  const bitrate = 128;
-  
-  const mp3encoder = new lamejs.Mp3Encoder(numChannels, sampleRate, bitrate);
-  const mp3Data: ArrayBuffer[] = [];
-  
-  // Get audio data
-  const leftChannel = audioBuffer.getChannelData(0);
-  const rightChannel = numChannels > 1 ? audioBuffer.getChannelData(1) : leftChannel;
-  
-  // Convert Float32 to Int16
-  const leftSamples = new Int16Array(samples);
-  const rightSamples = new Int16Array(samples);
-  
-  for (let i = 0; i < samples; i++) {
-    leftSamples[i] = Math.max(-32768, Math.min(32767, leftChannel[i] * 32768));
-    rightSamples[i] = Math.max(-32768, Math.min(32767, rightChannel[i] * 32768));
-    
-    // Report progress every 10%
-    if (onProgress && i % Math.floor(samples / 10) === 0) {
-      onProgress(Math.round((i / samples) * 100));
+  if (numChannels === 1) {
+    result.set(audioBuffer.getChannelData(0));
+  } else {
+    const left = audioBuffer.getChannelData(0);
+    const right = audioBuffer.getChannelData(1);
+    for (let i = 0; i < length; i++) {
+      result[i * 2] = left[i];
+      result[i * 2 + 1] = right[i];
     }
   }
   
-  // Encode in chunks
-  const blockSize = 1152;
-  for (let i = 0; i < samples; i += blockSize) {
-    const leftChunk = leftSamples.subarray(i, i + blockSize);
-    const rightChunk = rightSamples.subarray(i, i + blockSize);
-    
-    const mp3buf = mp3encoder.encodeBuffer(leftChunk, rightChunk);
-    if (mp3buf.length > 0) {
-      mp3Data.push(new Uint8Array(mp3buf).buffer);
-    }
+  return result;
+}
+
+/**
+ * Write a string to a DataView
+ */
+function writeString(view: DataView, offset: number, string: string): void {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
+  }
+}
+
+/**
+ * Encode AudioBuffer to WAV format (no external dependencies)
+ */
+function encodeWAV(audioBuffer: AudioBuffer): ArrayBuffer {
+  const numChannels = Math.min(2, audioBuffer.numberOfChannels);
+  const sampleRate = audioBuffer.sampleRate;
+  const numSamples = audioBuffer.length;
+  const bytesPerSample = 2; // 16-bit
+  
+  // Interleave channels
+  const interleaved = interleaveChannels(audioBuffer);
+  
+  // Calculate sizes
+  const dataSize = numSamples * numChannels * bytesPerSample;
+  const bufferSize = 44 + dataSize; // 44 bytes for WAV header
+  
+  const buffer = new ArrayBuffer(bufferSize);
+  const view = new DataView(buffer);
+  
+  // RIFF chunk descriptor
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, bufferSize - 8, true); // File size - 8
+  writeString(view, 8, 'WAVE');
+  
+  // fmt sub-chunk
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+  view.setUint16(20, 1, true); // AudioFormat (1 = PCM)
+  view.setUint16(22, numChannels, true); // NumChannels
+  view.setUint32(24, sampleRate, true); // SampleRate
+  view.setUint32(28, sampleRate * numChannels * bytesPerSample, true); // ByteRate
+  view.setUint16(32, numChannels * bytesPerSample, true); // BlockAlign
+  view.setUint16(34, bytesPerSample * 8, true); // BitsPerSample
+  
+  // data sub-chunk
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true); // Subchunk2Size
+  
+  // Write audio data as 16-bit PCM
+  let offset = 44;
+  for (let i = 0; i < interleaved.length; i++) {
+    // Clamp and convert to 16-bit
+    const sample = Math.max(-1, Math.min(1, interleaved[i]));
+    const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+    view.setInt16(offset, intSample, true);
+    offset += 2;
   }
   
-  // Flush remaining data
-  const mp3buf = mp3encoder.flush();
-  if (mp3buf.length > 0) {
-    mp3Data.push(new Uint8Array(mp3buf).buffer);
-  }
-  
-  return new Blob(mp3Data, { type: 'audio/mp3' });
+  return buffer;
 }
 
 /**
@@ -150,15 +190,16 @@ export async function renderCleanAudio(
     
     reportProgress('loading', 50, 'Audio loaded, preparing render...');
     
-    // Use the longer duration
+    // Use the longer duration and ensure same sample rate
     const duration = Math.max(vocalsBuffer.duration, instrumentalBuffer.duration);
     const sampleRate = vocalsBuffer.sampleRate;
-    const numChannels = Math.max(vocalsBuffer.numberOfChannels, instrumentalBuffer.numberOfChannels);
+    const numChannels = 2; // Force stereo output
     
     // Create OfflineAudioContext for rendering
+    const totalSamples = Math.ceil(duration * sampleRate);
     const offlineContext = new OfflineAudioContext(
       numChannels,
-      Math.ceil(duration * sampleRate),
+      totalSamples,
       sampleRate
     );
     
@@ -169,7 +210,7 @@ export async function renderCleanAudio(
     vocalsSource.buffer = vocalsBuffer;
     
     const vocalsGain = offlineContext.createGain();
-    createVolumeAutomation(vocalsGain, muteRegions, duration, sampleRate);
+    createVolumeAutomation(vocalsGain, muteRegions, duration);
     
     vocalsSource.connect(vocalsGain);
     vocalsGain.connect(offlineContext.destination);
@@ -179,7 +220,7 @@ export async function renderCleanAudio(
     instrumentalSource.buffer = instrumentalBuffer;
     instrumentalSource.connect(offlineContext.destination);
     
-    // Start both sources
+    // Start both sources at exactly time 0
     vocalsSource.start(0);
     instrumentalSource.start(0);
     
@@ -188,16 +229,14 @@ export async function renderCleanAudio(
     // Render the audio
     const renderedBuffer = await offlineContext.startRendering();
     
-    reportProgress('encoding', 80, 'Encoding to MP3...');
+    reportProgress('encoding', 85, 'Encoding to WAV...');
     
-    // Encode to MP3
-    const mp3Blob = encodeToMp3(renderedBuffer, (encodeProgress) => {
-      reportProgress('encoding', 80 + (encodeProgress * 0.15), `Encoding: ${encodeProgress}%`);
-    });
+    // Encode to WAV (native, no dependencies)
+    const wavBuffer = encodeWAV(renderedBuffer);
     
     reportProgress('complete', 100, 'Complete!');
     
-    return mp3Blob;
+    return new Blob([wavBuffer], { type: 'audio/wav' });
     
   } finally {
     await tempContext.close();
