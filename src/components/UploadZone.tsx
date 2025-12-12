@@ -12,24 +12,28 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
   const { toast } = useToast();
 
   const isValidFileType = (file: File) => {
-    const audioTypes = ['audio/mpeg', 'audio/wav', 'audio/flac', 'audio/ogg', 'audio/mp4', 'audio/x-m4a', 'audio/aac'];
-    const videoTypes = ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-msvideo'];
-    
-    return file.type.startsWith("audio/") || 
-           file.type.startsWith("video/") ||
-           audioTypes.includes(file.type) || 
-           videoTypes.includes(file.type) ||
-           file.name.toLowerCase().endsWith('.m4a') ||
-           file.name.toLowerCase().endsWith('.mp4') ||
-           file.name.toLowerCase().endsWith('.mov') ||
-           file.name.toLowerCase().endsWith('.webm');
+    const audioTypes = ["audio/mpeg", "audio/wav", "audio/flac", "audio/ogg", "audio/mp4", "audio/x-m4a", "audio/aac"];
+    const videoTypes = ["video/mp4", "video/quicktime", "video/webm", "video/x-msvideo"];
+
+    return (
+      file.type.startsWith("audio/") ||
+      file.type.startsWith("video/") ||
+      audioTypes.includes(file.type) ||
+      videoTypes.includes(file.type) ||
+      file.name.toLowerCase().endsWith(".m4a") ||
+      file.name.toLowerCase().endsWith(".mp4") ||
+      file.name.toLowerCase().endsWith(".mov") ||
+      file.name.toLowerCase().endsWith(".webm")
+    );
   };
 
   const isVideoFile = (file: File) => {
-    return file.type.startsWith("video/") || 
-           file.name.toLowerCase().endsWith('.mp4') ||
-           file.name.toLowerCase().endsWith('.mov') ||
-           file.name.toLowerCase().endsWith('.webm');
+    return (
+      file.type.startsWith("video/") ||
+      file.name.toLowerCase().endsWith(".mp4") ||
+      file.name.toLowerCase().endsWith(".mov") ||
+      file.name.toLowerCase().endsWith(".webm")
+    );
   };
 
   const handleDrop = useCallback(
@@ -39,7 +43,7 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
 
       const file = e.dataTransfer.files[0];
       if (!file) return;
-      
+
       if (!isValidFileType(file)) {
         toast({
           title: "Invalid file type",
@@ -48,23 +52,24 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
         });
         return;
       }
-      
+
       // Check file size
       const fileSizeMB = file.size / (1024 * 1024);
       if (fileSizeMB > 100) {
         toast({
           title: "File too large",
-          description: `File size is ${fileSizeMB.toFixed(1)}MB. Maximum is 100MB.`,
+          description: `File size is ${fileSizeMB.toFixed(1)}MB. Maximum is 25MB.`,
           variant: "destructive",
         });
         return;
       }
-      
+
       // Warning for large files
       if (fileSizeMB > 50) {
         toast({
           title: "Large file detected",
-          description: "Large files may take longer to process. Consider using a shorter clip (2-3 minutes) for best results.",
+          description:
+            "Large files may take longer to process. Consider using a shorter clip (2-3 minutes) for best results.",
           variant: "default",
         });
       }
@@ -76,10 +81,10 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
           description: "We'll extract the audio from your video automatically.",
         });
       }
-      
+
       onFileUpload(file, isVideoFile(file));
     },
-    [onFileUpload, toast]
+    [onFileUpload, toast],
   );
 
   const handleFileInput = useCallback(
@@ -105,12 +110,13 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
           });
           return;
         }
-        
+
         // Warning for large files that might have issues
         if (fileSizeMB > 50) {
           toast({
             title: "Large file detected",
-            description: "Large files may take longer to process and could exceed analysis limits. Consider using a shorter clip (2-3 minutes) for best results.",
+            description:
+              "Large files may take longer to process and could exceed analysis limits. Consider using a shorter clip (2-3 minutes) for best results.",
             variant: "default",
           });
         }
@@ -122,11 +128,11 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
             description: "We'll extract the audio from your video automatically.",
           });
         }
-        
+
         onFileUpload(file, isVideoFile(file));
       }
     },
-    [onFileUpload, toast]
+    [onFileUpload, toast],
   );
 
   return (
@@ -135,15 +141,21 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
         <h2 className="text-4xl font-bold mb-4">
           Upload Your <span className="text-primary neon-text">Vocal Recording</span>
         </h2>
-        <p className="text-muted-foreground text-lg mb-2">
-          Drag and drop your audio or video file, or click to browse
-        </p>
+        <p className="text-muted-foreground text-lg mb-2">Drag and drop your audio or video file, or click to browse</p>
         <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground mt-3">
           <span>🎤 Works best with:</span>
-          <Badge variant="outline" className="border-primary/50">Acapellas</Badge>
-          <Badge variant="outline" className="border-secondary/50">Vocal Stems</Badge>
-          <Badge variant="outline" className="border-accent/50">Voice Recordings</Badge>
-          <Badge variant="outline" className="border-primary/50">Spoken Word</Badge>
+          <Badge variant="outline" className="border-primary/50">
+            Acapellas
+          </Badge>
+          <Badge variant="outline" className="border-secondary/50">
+            Vocal Stems
+          </Badge>
+          <Badge variant="outline" className="border-accent/50">
+            Voice Recordings
+          </Badge>
+          <Badge variant="outline" className="border-primary/50">
+            Spoken Word
+          </Badge>
         </div>
       </div>
 
