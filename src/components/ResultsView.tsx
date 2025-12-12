@@ -119,8 +119,8 @@ export const ResultsView = ({ fileName, onAnalyzeAnother }: ResultsViewProps) =>
         }
       );
 
-      // Generate clean filename
-      const cleanName = `${sanitizeFilename(fileName)}-clean.mp3`;
+      // Generate clean filename (WAV format for perfect quality)
+      const cleanName = `${sanitizeFilename(fileName)}-clean.wav`;
       
       toast({
         title: "Clean Version Ready!",
