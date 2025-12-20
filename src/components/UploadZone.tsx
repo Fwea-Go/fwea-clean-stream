@@ -53,12 +53,13 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
         return;
       }
 
-      // Check file size
+      // Check file size - videos can be larger since we extract audio
       const fileSizeMB = file.size / (1024 * 1024);
-      if (fileSizeMB > 100) {
+      const maxSize = isVideoFile(file) ? 100 : 25; // Allow larger videos
+      if (fileSizeMB > maxSize) {
         toast({
           title: "File too large",
-          description: `File size is ${fileSizeMB.toFixed(1)}MB. Maximum is 25MB.`,
+          description: `File size is ${fileSizeMB.toFixed(1)}MB. Maximum is ${maxSize}MB for ${isVideoFile(file) ? 'video' : 'audio'} files.`,
           variant: "destructive",
         });
         return;
@@ -100,12 +101,13 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
           return;
         }
 
-        // Check file size (25MB limit as stated in UI)
+        // Check file size - videos can be larger since we extract audio
         const fileSizeMB = file.size / (1024 * 1024);
-        if (fileSizeMB > 100) {
+        const maxSize = isVideoFile(file) ? 100 : 25; // Allow larger videos
+        if (fileSizeMB > maxSize) {
           toast({
             title: "File too large",
-            description: `File size is ${fileSizeMB.toFixed(1)}MB. Maximum is 25MB.`,
+            description: `File size is ${fileSizeMB.toFixed(1)}MB. Maximum is ${maxSize}MB for ${isVideoFile(file) ? 'video' : 'audio'} files.`,
             variant: "destructive",
           });
           return;
@@ -213,7 +215,7 @@ export const UploadZone = ({ onFileUpload }: UploadZoneProps) => {
               <Video className="h-4 w-4" />
               Video: MP4, MOV, WebM (auto-converted to audio)
             </p>
-            <p className="mt-2 text-xs">Max file size: 25MB • Recommended: 2-3 minute clips</p>
+            <p className="mt-2 text-xs">Max: 25MB audio / 100MB video • Recommended: 2-3 minute clips</p>
           </div>
         </div>
       </label>
