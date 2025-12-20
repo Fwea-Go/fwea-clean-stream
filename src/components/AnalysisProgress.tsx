@@ -51,14 +51,15 @@ export const AnalysisProgress = ({ onComplete, onCancel, audioFile }: AnalysisPr
         if (isCancelled || !mounted) return;
         
         setProgress(5);
-        setStatus("Uploading audio file...");
+        const isVideo = sessionStorage.getItem('isVideoFile') === 'true';
+        setStatus(isVideo ? "Uploading video file..." : "Uploading audio file...");
 
         // Upload file directly to storage
         const storagePath = `${session.user.id}/uploads/${Date.now()}-${audioFile.name}`;
         const { error: uploadError } = await supabase.storage
           .from("audio-files")
           .upload(storagePath, audioFile, {
-            contentType: audioFile.type,
+            contentType: audioFile.type || (isVideo ? 'video/mp4' : 'audio/mpeg'),
             upsert: true,
           });
 
@@ -72,7 +73,8 @@ export const AnalysisProgress = ({ onComplete, onCancel, audioFile }: AnalysisPr
         if (isCancelled || !mounted) return;
         
         setProgress(10);
-        setStatus("Separating vocals from instrumentals...");
+        const isVideoFile = sessionStorage.getItem('isVideoFile') === 'true';
+        setStatus(isVideoFile ? "Extracting audio and separating stems..." : "Separating vocals from instrumentals...");
 
         // Step 1: Separate audio into vocals and instrumental
         const { data: separationData, error: separationError } = await supabase.functions.invoke("separate-audio", {
